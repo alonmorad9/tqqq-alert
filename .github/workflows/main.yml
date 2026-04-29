@@ -1,0 +1,22 @@
+name: TQQQ Alert System
+
+on:
+  schedule:
+    - cron: '45 20 * * 1-5'  # 20:45 UTC = after US market close (4pm ET)
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install yfinance pandas requests
+      - name: Run strategy check
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python script.py

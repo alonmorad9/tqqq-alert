@@ -2,12 +2,13 @@ name: TQQQ Alert System
 
 on:
   schedule:
-    - cron: '*/5 13-20 * * 1-5'   # Every 5 min during market hours — signals only
-    - cron: '45 20 * * 1-5'        # 22:45 Israel — full daily report
+    - cron: '*/5 13-20 * * 1-5'
+    - cron: '45 20 * * 1-5'
   workflow_dispatch:
 
 jobs:
-  check:
+  intraday-check:
+    if: github.event.schedule == '*/5 13-20 * * 1-5' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -16,13 +17,24 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: pip install yfinance pandas requests
-      - name: Run strategy check
+      - name: Run signal check
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          if [ "${{ github.event.schedule }}" = "45 20 * * 1-5" ]; then
-            python script.py daily
-          else
-            python script.py check
-          fi
+        run: python script.py check
+
+  daily-report:
+    if: github.event.schedule == '45 20 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install yfinance pandas requests
+      - name: Run daily report
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python script.py daily

@@ -1,20 +1,20 @@
-import yfinance as yf
-import requests
 import os
+import requests
+import yfinance as yf
+import pandas as pd
 
 def check_strategy():
-    df = yf.download("TQQQ", period="2y", interval="1d", auto_adjust=True)
+    ticker = yf.download("TQQQ", period="2y", interval="1d", auto_adjust=True)
     
-    # Fix MultiIndex columns
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_names(0) if False else [c[0] for c in df.columns]
+    # Flatten MultiIndex columns if present
+    if isinstance(ticker.columns, pd.MultiIndex):
+        ticker.columns = [c[0] for c in ticker.columns]
     
-    import pandas as pd
-    df['SMA200'] = df['Close'].rolling(window=200).mean()
+    ticker['SMA200'] = ticker['Close'].rolling(window=200).mean()
     
-    current_price = float(df['Close'].iloc[-1])
-    sma200 = float(df['SMA200'].iloc[-1])
-    recent_high = float(df['High'].tail(30).max())
+    current_price = float(ticker['Close'].iloc[-1])
+    sma200 = float(ticker['SMA200'].iloc[-1])
+    recent_high = float(ticker['High'].tail(30).max())
     trailing_stop = recent_high * 0.90
     
     print(f"Price: {current_price:.2f} | SMA200: {sma200:.2f} | TSL: {trailing_stop:.2f}")
@@ -28,7 +28,6 @@ def check_strategy():
             f"SMA200: {sma200:.2f}\n"
             f"TSL (90% of 30d high): {trailing_stop:.2f}"
         )
-        send_telegram(msg)
     else:
         msg = (
             f"✅ TQQQ Status OK\n"
@@ -36,7 +35,8 @@ def check_strategy():
             f"SMA200: {sma200:.2f}\n"
             f"TSL: {trailing_stop:.2f}"
         )
-        send_telegram(msg)  # optional: remove this if you only want alerts
+    
+    send_telegram(msg)
 
 def send_telegram(message):
     token = os.getenv('TELEGRAM_TOKEN')

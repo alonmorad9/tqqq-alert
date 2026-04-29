@@ -4,10 +4,10 @@ import yfinance as yf
 import pandas as pd
 
 # ── YOUR POSITION ──────────────────────────────────────────
-ENTRY_DATE     = "2026-04-29"
-SHARES         = 40.4647
-AVG_COST       = 61.54
-TICKER         = "TQQQ"
+ENTRY_DATE = "2026-04-29"
+SHARES     = 40.4647
+AVG_COST   = 61.54
+TICKER     = "TQQQ"
 # ───────────────────────────────────────────────────────────
 
 def check_strategy():
@@ -19,64 +19,74 @@ def check_strategy():
 
     ticker['SMA200'] = ticker['Close'].rolling(window=200).mean()
 
+    # Current values
     current_price  = float(ticker['Close'].iloc[-1])
     sma200         = float(ticker['SMA200'].iloc[-1])
-    prev_price     = float(ticker['Close'].iloc[-2])
-    prev_sma200    = float(ticker['SMA200'].iloc[-2])
     recent_high    = float(ticker['High'].tail(30).max())
     trailing_stop  = round(recent_high * 0.90, 2)
 
+    # Previous values (for crossover detection)
+    prev_price         = float(ticker['Close'].iloc[-2])
+    prev_sma200        = float(ticker['SMA200'].iloc[-2])
+    prev_recent_high   = float(ticker['High'].tail(31).iloc[:-1].max())
+    prev_trailing_stop = round(prev_recent_high * 0.90, 2)
+
+    # Hard stop: 5% below your avg cost
+    hard_stop = round(AVG_COST * 0.95, 2)
+
     # P&L
-    position_value  = SHARES * current_price
-    cost_basis      = SHARES * AVG_COST
-    pnl             = position_value - cost_basis
-    pnl_pct         = (pnl / cost_basis) * 100
+    position_value = SHARES * current_price
+    cost_basis     = SHARES * AVG_COST
+    pnl            = position_value - cost_basis
+    pnl_pct        = (pnl / cost_basis) * 100
 
-    # ── SIGNAL DETECTION ───────────────────────────────────
-    crossed_below_sma  = prev_price >= prev_sma200 and current_price < sma200
-    crossed_above_sma  = prev_price <= prev_sma200 and current_price > sma200
-    hit_trailing_stop  = current_price < trailing_stop
+    # ── SIGNAL DETECTION (crossovers only) ────────────────
+    crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
+    crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
+    hit_trailing_stop = prev_price >= prev_trailing_stop and current_price < trailing_stop
+    hit_hard_stop     = prev_price >= hard_stop and current_price < hard_stop
 
-    # ── BUILD MESSAGE ──────────────────────────────────────
-    date_str = ticker.index[-1].strftime("%d/%m/%Y")
-    pnl_emoji = "🟢" if pnl >= 0 else "🔴"
-
+    # ── ACTION LOGIC ──────────────────────────────────────
     if hit_trailing_stop:
         action = "🚨 SELL NOW — TRAILING STOP HIT"
+    elif hit_hard_stop:
+        action = "🚨 SELL NOW — HARD STOP HIT (5% below entry)"
     elif crossed_below_sma:
         action = "🚨 SELL NOW — CROSSED BELOW SMA200"
     elif crossed_above_sma:
         action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
-    elif current_price > sma200:
+    elif current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
+    elif current_price < sma200:
+        action = "⚠️ CAUTION — Price below SMA200"
     else:
-        action = "⚠️ CAUTION — Price below SMA200 (consider exiting)"
+        action = "⚠️ CAUTION — Price near stop level"
+
+    # ── BUILD MESSAGE ─────────────────────────────────────
+    date_str   = ticker.index[-1].strftime("%d/%m/%Y")
+    pnl_emoji  = "🟢" if pnl >= 0 else "🔴"
+    gap_to_stop = round(((current_price - trailing_stop) / current_price) * 100, 2)
 
     msg = (
         f"📊 TQQQ Daily Report — {date_str}\n"
         f"{'─' * 30}\n"
-        f"Action:        {action}\n"
+        f"Action: {action}\n"
         f"{'─' * 30}\n"
-        f"💰 Price:      ${current_price:.2f}\n"
-        f"📈 SMA200:     ${sma200:.2f}\n"
-        f"🛑 Stop Loss:  ${trailing_stop:.2f}  (90% of 30d high ${recent_high:.2f})\n"
+        f"💰 Price:        ${current_price:.2f}\n"
+        f"📈 SMA200:       ${sma200:.2f}\n"
+        f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)\n"
+        f"🔒 Hard Stop:    ${hard_stop:.2f}  (5% below entry)\n"
         f"{'─' * 30}\n"
-        f"📦 Position:   {SHARES} shares\n"
-        f"💵 Avg Cost:   ${AVG_COST:.2f}\n"
-        f"💼 Value:      ${position_value:.2f}\n"
-        f"{pnl_emoji} P&L:        ${pnl:+.2f} ({pnl_pct:+.2f}%)\n"
+        f"📦 Shares:       {SHARES}\n"
+        f"💵 Avg Cost:     ${AVG_COST:.2f}\n"
+        f"💼 Value:        ${position_value:.2f}\n"
+        f"{pnl_emoji} P&L:          ${pnl:+.2f} ({pnl_pct:+.2f}%)\n"
         f"{'─' * 30}\n"
-        f"Entry Date:    {ENTRY_DATE}\n"
+        f"Entry Date:      {ENTRY_DATE}\n"
     )
 
     send_telegram(msg)
-
-    # ── CONSOLE LOG ────────────────────────────────────────
     print(msg)
-
-    # ── EXIT CODE: fail loudly if sell signal (optional) ──
-    if hit_trailing_stop or crossed_below_sma:
-        exit(0)  # still exits 0 so GitHub doesn't mark as failed
 
 
 def send_telegram(message):

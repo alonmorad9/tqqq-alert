@@ -2,13 +2,13 @@ name: TQQQ Alert System
 
 on:
   schedule:
-    - cron: '*/5 13-20 * * 1-5'
-    - cron: '45 20 * * 1-5'
+    - cron: '30 13 * * 1-5'   # 16:30 Israel — 30 min after US market open
+    - cron: '45 20 * * 1-5'   # 23:45 Israel — after US market close
   workflow_dispatch:
 
 jobs:
   intraday-check:
-    if: github.event.schedule == '*/5 13-20 * * 1-5' || github.event_name == 'workflow_dispatch'
+    if: ${{ github.event.schedule == '30 13 * * 1-5' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -24,7 +24,7 @@ jobs:
         run: python script.py check
 
   daily-report:
-    if: github.event.schedule == '45 20 * * 1-5'
+    if: ${{ github.event.schedule == '45 20 * * 1-5' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3

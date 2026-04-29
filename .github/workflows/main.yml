@@ -2,7 +2,8 @@ name: TQQQ Alert System
 
 on:
   schedule:
-    - cron: '45 20 * * 1-5'  # 20:45 UTC = after US market close (4pm ET)
+    - cron: '45 13 * * 1-5'  # 16:45 Israel = 13:45 UTC (30 min after US open)
+    - cron: '45 20 * * 1-5'  # 23:45 Israel = 20:45 UTC (after US close)
   workflow_dispatch:
 
 jobs:

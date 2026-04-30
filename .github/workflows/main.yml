@@ -1,15 +1,6 @@
 name: TQQQ Alert System
 
 on:
-  schedule:
-    # 10-minute intraday candidates across the full regular-session UTC range
-    # for both US standard time and daylight time. script.py filters by NASDAQ
-    # trading hours before sending alerts.
-    - cron: '*/10 13-21 * * 1-5'
-
-    # Report candidates. script.py sends only the candidates that are exactly
-    # 15 minutes after NASDAQ opens or 15 minutes before it closes.
-    - cron: '45 13-20 * * 1-5'
   workflow_dispatch:
     inputs:
       mode:

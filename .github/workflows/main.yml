@@ -2,13 +2,80 @@ name: TQQQ Alert System
 
 on:
   schedule:
-    - cron: '30 13 * * 1-5'   # 16:30 Israel — 30 min after US market open
-    - cron: '45 20 * * 1-5'   # 23:45 Israel — after US market close
+    # 10-minute intraday candidates across the full regular-session UTC range
+    # for both US standard time and daylight time. script.py filters by NASDAQ
+    # trading hours before sending alerts.
+    - cron: '30 13 * * 1-5'
+    - cron: '40 13 * * 1-5'
+    - cron: '50 13 * * 1-5'
+    - cron: '0 14 * * 1-5'
+    - cron: '10 14 * * 1-5'
+    - cron: '20 14 * * 1-5'
+    - cron: '30 14 * * 1-5'
+    - cron: '40 14 * * 1-5'
+    - cron: '50 14 * * 1-5'
+    - cron: '0 15 * * 1-5'
+    - cron: '10 15 * * 1-5'
+    - cron: '20 15 * * 1-5'
+    - cron: '30 15 * * 1-5'
+    - cron: '40 15 * * 1-5'
+    - cron: '50 15 * * 1-5'
+    - cron: '0 16 * * 1-5'
+    - cron: '10 16 * * 1-5'
+    - cron: '20 16 * * 1-5'
+    - cron: '30 16 * * 1-5'
+    - cron: '40 16 * * 1-5'
+    - cron: '50 16 * * 1-5'
+    - cron: '0 17 * * 1-5'
+    - cron: '10 17 * * 1-5'
+    - cron: '20 17 * * 1-5'
+    - cron: '30 17 * * 1-5'
+    - cron: '40 17 * * 1-5'
+    - cron: '50 17 * * 1-5'
+    - cron: '0 18 * * 1-5'
+    - cron: '10 18 * * 1-5'
+    - cron: '20 18 * * 1-5'
+    - cron: '30 18 * * 1-5'
+    - cron: '40 18 * * 1-5'
+    - cron: '50 18 * * 1-5'
+    - cron: '0 19 * * 1-5'
+    - cron: '10 19 * * 1-5'
+    - cron: '20 19 * * 1-5'
+    - cron: '30 19 * * 1-5'
+    - cron: '40 19 * * 1-5'
+    - cron: '50 19 * * 1-5'
+    - cron: '0 20 * * 1-5'
+    - cron: '10 20 * * 1-5'
+    - cron: '20 20 * * 1-5'
+    - cron: '30 20 * * 1-5'
+    - cron: '40 20 * * 1-5'
+    - cron: '50 20 * * 1-5'
+    - cron: '0 21 * * 1-5'
+
+    # Report candidates. script.py sends only the candidates that are exactly
+    # 15 minutes after NASDAQ opens or 15 minutes before it closes.
+    - cron: '45 13 * * 1-5'
+    - cron: '45 14 * * 1-5'
+    - cron: '45 15 * * 1-5'
+    - cron: '45 16 * * 1-5'
+    - cron: '45 17 * * 1-5'
+    - cron: '45 18 * * 1-5'
+    - cron: '45 19 * * 1-5'
+    - cron: '45 20 * * 1-5'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'check'
+        type: choice
+        options:
+          - check
+          - daily
+          - auto
 
 jobs:
-  intraday-check:
-    if: ${{ github.event.schedule == '30 13 * * 1-5' || github.event_name == 'workflow_dispatch' }}
+  alert:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -17,24 +84,10 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: pip install yfinance pandas requests
-      - name: Run signal check
+      - name: Run alert
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python script.py check
-
-  daily-report:
-    if: ${{ github.event.schedule == '45 20 * * 1-5' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install yfinance pandas requests
-      - name: Run daily report
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python script.py daily
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
+          RUN_MODE: ${{ inputs.mode }}
+        run: python script.py "${RUN_MODE:-auto}"

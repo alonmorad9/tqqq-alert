@@ -12,6 +12,10 @@ on:
           - check
           - daily
           - auto
+      schedule:
+        description: 'Cron expression from external scheduler'
+        required: false
+        default: ''
 
 jobs:
   alert:
@@ -27,6 +31,6 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
+          GITHUB_EVENT_SCHEDULE: ${{ inputs.schedule }}
           RUN_MODE: ${{ inputs.mode }}
         run: python script.py "${RUN_MODE:-auto}"

@@ -2,7 +2,7 @@ const OWNER = "alonmorad9";
 const REPO = "tqqq-alert";
 const WORKFLOW_FILE = "main.yml";
 
-async function triggerWorkflow(env) {
+async function triggerWorkflow(env, schedule = "") {
   const response = await fetch(
     `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
     {
@@ -18,6 +18,7 @@ async function triggerWorkflow(env) {
         ref: "main",
         inputs: {
           mode: "auto",
+          schedule,
         },
       }),
     },
@@ -30,7 +31,7 @@ async function triggerWorkflow(env) {
 
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(triggerWorkflow(env));
+    ctx.waitUntil(triggerWorkflow(env, event.cron));
   },
 
   async fetch(request, env) {

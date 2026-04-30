@@ -399,8 +399,8 @@ def check_strategy(daily_report=False, report_kind=None):
 
     date_str = ticker.index[-1].strftime("%d/%m/%Y")
     pnl_emoji = "🟢" if pnl >= 0 else "🔴"
-    gap_to_stop = round(((current_price - trailing_stop) / current_price) * 100, 2)
-    gap_to_sma = round(((current_price - sma200) / current_price) * 100, 2)
+    gap_to_stop = round(((trailing_stop - current_price) / current_price) * 100, 2)
+    gap_to_sma = round(((sma200 - current_price) / current_price) * 100, 2)
     next_profit_target = avg_cost * next_profit_multiple if position_open and avg_cost else None
     position_status = "In position" if position_open else "Waiting for re-entry"
 

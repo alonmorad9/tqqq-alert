@@ -13,6 +13,7 @@ TICKER = "TQQQ"
 # ──────────────────────────────────────────────────────────
 
 MARKET_TZ = ZoneInfo("America/New_York")
+TRAILING_STOP_PCT = 0.35
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -175,6 +176,36 @@ def report_kind_for_schedule(intended_utc):
     return kind, f"{kind} report time"
 
 
+def report_kind_near_time(now_utc, tolerance=timedelta(minutes=30)):
+    session = get_market_session(now_utc.astimezone(MARKET_TZ).date())
+    if session is None:
+        return None, "NASDAQ is closed"
+
+    market_open, market_close = session
+    report_times = {
+        market_open + timedelta(minutes=15): "open",
+        market_close - timedelta(minutes=15): "close",
+    }
+
+    for report_time, kind in report_times.items():
+        if report_time <= now_utc <= report_time + tolerance:
+            return kind, f"{kind} report time"
+
+    return None, "not near a report time"
+
+
+def is_market_open(now_utc):
+    session = get_market_session(now_utc.astimezone(MARKET_TZ).date())
+    if session is None:
+        return False, "NASDAQ is closed"
+
+    market_open, market_close = session
+    if market_open <= now_utc <= market_close:
+        return True, "NASDAQ trading hours"
+
+    return False, "outside NASDAQ trading hours"
+
+
 def should_send_daily_report(mode, intended_utc=None):
     if mode == "daily":
         return True, "manual daily run"
@@ -197,12 +228,11 @@ def check_strategy(daily_report=False, report_kind=None):
     current_price = float(ticker["Close"].iloc[-1])
     sma200 = float(ticker["SMA200"].iloc[-1])
     recent_high = float(ticker["High"].tail(30).max())
-    trailing_stop = round(recent_high * 0.90, 2)
+    trailing_stop = round(recent_high * (1 - TRAILING_STOP_PCT), 2)
     prev_price = float(ticker["Close"].iloc[-2])
     prev_sma200 = float(ticker["SMA200"].iloc[-2])
     prev_recent_high = float(ticker["High"].tail(31).iloc[:-1].max())
-    prev_trailing_stop = round(prev_recent_high * 0.90, 2)
-    hard_stop = round(AVG_COST * 0.95, 2)
+    prev_trailing_stop = round(prev_recent_high * (1 - TRAILING_STOP_PCT), 2)
 
     position_value = SHARES * current_price
     cost_basis = SHARES * AVG_COST
@@ -213,14 +243,11 @@ def check_strategy(daily_report=False, report_kind=None):
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = prev_price >= prev_trailing_stop and current_price < trailing_stop
-    hit_hard_stop = prev_price >= hard_stop and current_price < hard_stop
 
-    is_signal = hit_trailing_stop or hit_hard_stop or crossed_below_sma or crossed_above_sma
+    is_signal = hit_trailing_stop or crossed_below_sma or crossed_above_sma
 
     if hit_trailing_stop:
         action = "🚨 SELL NOW — TRAILING STOP HIT"
-    elif hit_hard_stop:
-        action = "🚨 SELL NOW — HARD STOP HIT (5% below entry)"
     elif crossed_below_sma:
         action = "🚨 SELL NOW — CROSSED BELOW SMA200"
     elif crossed_above_sma:
@@ -252,7 +279,6 @@ def check_strategy(daily_report=False, report_kind=None):
             f"💰 Price:        ${current_price:.2f}\n"
             f"📈 SMA200:       ${sma200:.2f}\n"
             f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)\n"
-            f"🔒 Hard Stop:    ${hard_stop:.2f}  (5% below entry)\n"
             f"{'─' * 30}\n"
             f"📦 Shares:       {SHARES}\n"
             f"💵 Avg Cost:     ${AVG_COST:.2f}\n"
@@ -272,7 +298,6 @@ def check_strategy(daily_report=False, report_kind=None):
             f"💰 Price:      ${current_price:.2f}\n"
             f"📈 SMA200:     ${sma200:.2f}\n"
             f"🛑 Trail Stop: ${trailing_stop:.2f}\n"
-            f"🔒 Hard Stop:  ${hard_stop:.2f}\n"
             f"{pnl_emoji} P&L:        ${pnl:+.2f} ({pnl_pct:+.2f}%)\n"
         )
         send_telegram(msg)
@@ -291,6 +316,27 @@ def send_telegram(message):
 def run_auto_mode():
     schedule = os.getenv("GITHUB_EVENT_SCHEDULE")
     intended_utc = intended_schedule_time(schedule)
+
+    if intended_utc is None:
+        now_utc = datetime.now(UTC)
+        if schedule and schedule.startswith("45 "):
+            report_kind, report_reason = report_kind_near_time(now_utc)
+            if report_kind:
+                print(f"[AUTO] Running {report_kind} report: {report_reason}")
+                check_strategy(daily_report=True, report_kind=report_kind)
+                return
+
+            print(f"[AUTO] Skipping report candidate: {report_reason}")
+            return
+
+        intraday_check, intraday_reason = is_market_open(now_utc)
+        if intraday_check:
+            print(f"[AUTO] Running intraday check: {intraday_reason}")
+            check_strategy(daily_report=False)
+            return
+
+        print(f"[AUTO] Skipping scheduled run: {intraday_reason}")
+        return
 
     daily_report, daily_reason = should_send_daily_report("auto", intended_utc)
     if daily_report:

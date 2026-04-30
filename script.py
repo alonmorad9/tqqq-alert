@@ -1,6 +1,8 @@
+import json
 import os
 import sys
 from datetime import UTC, datetime, time, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
@@ -12,8 +14,11 @@ AVG_COST = 61.54
 TICKER = "TQQQ"
 # ──────────────────────────────────────────────────────────
 
+STATE_FILE = Path("position_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
 TRAILING_STOP_PCT = 0.35
+PROFIT_STEP_PCT = 1.0
+PROFIT_SELL_FRACTION = 0.5
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -214,7 +219,38 @@ def should_send_daily_report(mode, intended_utc=None):
     return kind is not None, reason
 
 
-def check_strategy(daily_report=False, report_kind=None):
+def default_state():
+    return {
+        "ticker": TICKER,
+        "position_open": True,
+        "entry_date": ENTRY_DATE,
+        "avg_cost": AVG_COST,
+        "shares": SHARES,
+        "cash": 0.0,
+        "next_profit_multiple": 2.0,
+        "last_action": None,
+        "last_action_at": None,
+    }
+
+
+def load_state():
+    if not STATE_FILE.exists():
+        return default_state()
+
+    with STATE_FILE.open() as f:
+        state = json.load(f)
+
+    merged = default_state()
+    merged.update(state)
+    return merged
+
+
+def save_state(state):
+    state["last_action_at"] = datetime.now(UTC).isoformat()
+    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+
+
+def fetch_market_data():
     import pandas as pd
     import yfinance as yf
 
@@ -224,6 +260,16 @@ def check_strategy(daily_report=False, report_kind=None):
         ticker.columns = [c[0] for c in ticker.columns]
 
     ticker["SMA200"] = ticker["Close"].rolling(window=200).mean()
+    return ticker
+
+
+def money(value):
+    return f"${value:.2f}"
+
+
+def check_strategy(daily_report=False, report_kind=None):
+    state = load_state()
+    ticker = fetch_market_data()
 
     current_price = float(ticker["Close"].iloc[-1])
     sma200 = float(ticker["SMA200"].iloc[-1])
@@ -234,34 +280,127 @@ def check_strategy(daily_report=False, report_kind=None):
     prev_recent_high = float(ticker["High"].tail(31).iloc[:-1].max())
     prev_trailing_stop = round(prev_recent_high * (1 - TRAILING_STOP_PCT), 2)
 
-    position_value = SHARES * current_price
-    cost_basis = SHARES * AVG_COST
-    pnl = position_value - cost_basis
-    pnl_pct = (pnl / cost_basis) * 100
+    position_open = bool(state["position_open"])
+    shares = float(state["shares"])
+    avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
+    cash = float(state.get("cash", 0.0))
+    next_profit_multiple = float(state.get("next_profit_multiple", 2.0))
+
+    position_value = shares * current_price
+    cost_basis = shares * avg_cost
+    total_value = cash + position_value
+    pnl = position_value - cost_basis if position_open else 0.0
+    pnl_pct = (pnl / cost_basis) * 100 if cost_basis else 0.0
 
     # ── SIGNAL DETECTION ──────────────────────────────────
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = prev_price >= prev_trailing_stop and current_price < trailing_stop
+    hit_profit_target = (
+        position_open
+        and shares > 0
+        and avg_cost > 0
+        and current_price >= avg_cost * next_profit_multiple
+    )
 
-    is_signal = hit_trailing_stop or crossed_below_sma or crossed_above_sma
+    action = None
+    state_changed = False
+    instruction_lines = []
 
-    if hit_trailing_stop:
+    if position_open and hit_trailing_stop:
+        sell_shares = shares
+        cash += sell_shares * current_price
+        shares = 0.0
+        state.update({
+            "position_open": False,
+            "shares": shares,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "next_profit_multiple": 2.0,
+            "last_action": "sell_all_trailing_stop",
+        })
+        state_changed = True
         action = "🚨 SELL NOW — TRAILING STOP HIT"
-    elif crossed_below_sma:
+        instruction_lines.append(f"Sell all remaining shares: {sell_shares:.4f}")
+    elif position_open and crossed_below_sma:
+        sell_shares = shares
+        cash += sell_shares * current_price
+        shares = 0.0
+        state.update({
+            "position_open": False,
+            "shares": shares,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "next_profit_multiple": 2.0,
+            "last_action": "sell_all_sma200",
+        })
+        state_changed = True
         action = "🚨 SELL NOW — CROSSED BELOW SMA200"
-    elif crossed_above_sma:
-        action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
-    elif current_price > sma200 and current_price > trailing_stop:
+        instruction_lines.append(f"Sell all remaining shares: {sell_shares:.4f}")
+    elif position_open and hit_profit_target:
+        sell_shares = shares * PROFIT_SELL_FRACTION
+        cash += sell_shares * current_price
+        shares -= sell_shares
+        target_pct = int(round((next_profit_multiple - 1) * 100))
+        state.update({
+            "position_open": True,
+            "shares": round(shares, 6),
+            "cash": round(cash, 2),
+            "next_profit_multiple": round(next_profit_multiple + PROFIT_STEP_PCT, 4),
+            "last_action": f"profit_trim_{target_pct}",
+        })
+        state_changed = True
+        action = f"💰 TAKE PROFIT — +{target_pct}% TARGET HIT"
+        instruction_lines.append(f"Sell 50% of remaining shares: {sell_shares:.4f}")
+        instruction_lines.append(f"Keep riding with: {shares:.4f} shares")
+    elif not position_open and crossed_above_sma:
+        buy_cash = cash
+        buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
+        if buy_shares > 0:
+            shares = buy_shares
+            cash = 0.0
+            state.update({
+                "position_open": True,
+                "entry_date": ticker.index[-1].strftime("%Y-%m-%d"),
+                "avg_cost": round(current_price, 4),
+                "shares": round(shares, 6),
+                "cash": cash,
+                "next_profit_multiple": 2.0,
+                "last_action": "buy_sma200",
+            })
+            state_changed = True
+            action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
+            instruction_lines.append(f"Buy with available cash: {money(buy_cash)}")
+            instruction_lines.append(f"Estimated shares: {buy_shares:.4f}")
+        else:
+            action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
+            instruction_lines.append("No tracked cash is available; update position_state.json after buying.")
+    elif position_open and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
     elif current_price < sma200:
-        action = "⚠️ CAUTION — Price below SMA200"
+        action = "⏸️ WAIT — Price below SMA200" if not position_open else "⚠️ CAUTION — Price below SMA200"
     else:
-        action = "⚠️ CAUTION — Price near stop level"
+        action = "⏸️ WAIT — No open position" if not position_open else "⚠️ CAUTION — Price near stop level"
+
+    is_signal = state_changed or (not position_open and crossed_above_sma)
+
+    position_open = bool(state["position_open"])
+    shares = float(state["shares"])
+    avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
+    cash = float(state.get("cash", 0.0))
+    next_profit_multiple = float(state.get("next_profit_multiple", 2.0))
+    position_value = shares * current_price
+    cost_basis = shares * avg_cost
+    total_value = cash + position_value
+    pnl = position_value - cost_basis if position_open else 0.0
+    pnl_pct = (pnl / cost_basis) * 100 if cost_basis else 0.0
 
     date_str = ticker.index[-1].strftime("%d/%m/%Y")
     pnl_emoji = "🟢" if pnl >= 0 else "🔴"
     gap_to_stop = round(((current_price - trailing_stop) / current_price) * 100, 2)
+    next_profit_target = avg_cost * next_profit_multiple if position_open and avg_cost else None
 
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
@@ -271,36 +410,59 @@ def check_strategy(daily_report=False, report_kind=None):
         elif report_kind == "close":
             report_title = "Closing Report"
 
-        msg = (
-            f"📊 TQQQ {report_title} — {date_str}\n"
-            f"{'─' * 30}\n"
-            f"Action: {action}\n"
-            f"{'─' * 30}\n"
-            f"💰 Price:        ${current_price:.2f}\n"
-            f"📈 SMA200:       ${sma200:.2f}\n"
-            f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)\n"
-            f"{'─' * 30}\n"
-            f"📦 Shares:       {SHARES}\n"
-            f"💵 Avg Cost:     ${AVG_COST:.2f}\n"
-            f"💼 Value:        ${position_value:.2f}\n"
-            f"{pnl_emoji} P&L:          ${pnl:+.2f} ({pnl_pct:+.2f}%)\n"
-            f"{'─' * 30}\n"
-            f"Entry Date:      {ENTRY_DATE}\n"
-        )
+        lines = [
+            f"📊 TQQQ {report_title} — {date_str}",
+            "─" * 30,
+            f"Action: {action}",
+            *instruction_lines,
+            "─" * 30,
+            f"💰 Price:        ${current_price:.2f}",
+            f"📈 SMA200:       ${sma200:.2f}",
+            f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)",
+        ]
+        if next_profit_target:
+            lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}")
+        lines.extend([
+            "─" * 30,
+            f"📦 Shares:       {shares:.4f}",
+        ])
+        if position_open:
+            lines.append(f"💵 Avg Cost:     ${avg_cost:.2f}")
+        lines.extend([
+            f"🏦 Cash:         ${cash:.2f}",
+            f"💼 Value:        ${position_value:.2f}",
+            f"📊 Total:        ${total_value:.2f}",
+            f"{pnl_emoji} P&L:          ${pnl:+.2f} ({pnl_pct:+.2f}%)",
+            "─" * 30,
+            f"Entry Date:      {state.get('entry_date') or 'Waiting for entry'}",
+        ])
+        msg = "\n".join(lines)
         send_telegram(msg)
+        if state_changed:
+            save_state(state)
 
     # ── INTRADAY: only send if signal ─────────────────────
     elif is_signal:
-        msg = (
-            f"{'─' * 30}\n"
-            f"{action}\n"
-            f"{'─' * 30}\n"
-            f"💰 Price:      ${current_price:.2f}\n"
-            f"📈 SMA200:     ${sma200:.2f}\n"
-            f"🛑 Trail Stop: ${trailing_stop:.2f}\n"
-            f"{pnl_emoji} P&L:        ${pnl:+.2f} ({pnl_pct:+.2f}%)\n"
-        )
+        lines = [
+            "─" * 30,
+            action,
+            *instruction_lines,
+            "─" * 30,
+            f"💰 Price:      ${current_price:.2f}",
+            f"📈 SMA200:     ${sma200:.2f}",
+            f"🛑 Trail Stop: ${trailing_stop:.2f}",
+        ]
+        if next_profit_target:
+            lines.append(f"🎯 Next Profit: ${next_profit_target:.2f}")
+        lines.extend([
+            f"📦 Shares:     {shares:.4f}",
+            f"🏦 Cash:       ${cash:.2f}",
+            f"{pnl_emoji} P&L:        ${pnl:+.2f} ({pnl_pct:+.2f}%)",
+        ])
+        msg = "\n".join(lines)
         send_telegram(msg)
+        if state_changed:
+            save_state(state)
 
     print(f"[{'DAILY' if daily_report else 'CHECK'}] {action} | Price: {current_price:.2f}")
 

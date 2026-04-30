@@ -400,7 +400,9 @@ def check_strategy(daily_report=False, report_kind=None):
     date_str = ticker.index[-1].strftime("%d/%m/%Y")
     pnl_emoji = "🟢" if pnl >= 0 else "🔴"
     gap_to_stop = round(((current_price - trailing_stop) / current_price) * 100, 2)
+    gap_to_sma = round(((current_price - sma200) / current_price) * 100, 2)
     next_profit_target = avg_cost * next_profit_multiple if position_open and avg_cost else None
+    position_status = "In position" if position_open else "Waiting for re-entry"
 
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
@@ -416,12 +418,14 @@ def check_strategy(daily_report=False, report_kind=None):
             f"Action: {action}",
             *instruction_lines,
             "─" * 30,
+            f"Mode:          {position_status}",
             f"💰 Price:        ${current_price:.2f}",
-            f"📈 SMA200:       ${sma200:.2f}",
+            f"📈 SMA200:       ${sma200:.2f}  ({gap_to_sma:+.1f}% away)",
             f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)",
         ]
         if next_profit_target:
-            lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}")
+            next_profit_pct = int(round((next_profit_multiple - 1) * 100))
+            lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}  (+{next_profit_pct}% target)")
         lines.extend([
             "─" * 30,
             f"📦 Shares:       {shares:.4f}",

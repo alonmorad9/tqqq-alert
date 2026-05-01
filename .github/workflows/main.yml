@@ -1,6 +1,9 @@
 name: TQQQ Alert System
 
 on:
+  schedule:
+    - cron: '*/10 13-21 * * 1-5'
+    - cron: '45 13-20 * * 1-5'
   workflow_dispatch:
     inputs:
       mode:
@@ -20,6 +23,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: tqqq-alert-state
+  cancel-in-progress: false
+
 jobs:
   alert:
     runs-on: ubuntu-latest
@@ -34,8 +41,8 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GITHUB_EVENT_SCHEDULE: ${{ inputs.schedule }}
-          RUN_MODE: ${{ inputs.mode }}
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule || inputs.schedule }}
+          RUN_MODE: ${{ inputs.mode || 'auto' }}
         run: python script.py "${RUN_MODE:-auto}"
       - name: Save position state
         run: |

@@ -230,6 +230,7 @@ def default_state():
         "next_profit_multiple": 2.0,
         "last_action": None,
         "last_action_at": None,
+        "last_report_key": None,
     }
 
 
@@ -267,7 +268,7 @@ def money(value):
     return f"${value:.2f}"
 
 
-def check_strategy(daily_report=False, report_kind=None):
+def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     state = load_state()
     ticker = fetch_market_data()
 
@@ -406,6 +407,11 @@ def check_strategy(daily_report=False, report_kind=None):
 
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
+        report_key = f"{ticker.index[-1].strftime('%Y-%m-%d')}:{report_kind or 'daily'}"
+        if dedupe_report and state.get("last_report_key") == report_key:
+            print(f"[DAILY] Skipping duplicate {report_kind or 'daily'} report | Price: {current_price:.2f}")
+            return
+
         report_title = "Daily Report"
         if report_kind == "open":
             report_title = "Opening Report"
@@ -442,6 +448,9 @@ def check_strategy(daily_report=False, report_kind=None):
         ])
         msg = "\n".join(lines)
         send_telegram(msg)
+        if dedupe_report:
+            state["last_report_key"] = report_key
+            state_changed = True
         if state_changed:
             save_state(state)
 
@@ -489,7 +498,7 @@ def run_auto_mode():
             report_kind, report_reason = report_kind_near_time(now_utc)
             if report_kind:
                 print(f"[AUTO] Running {report_kind} report: {report_reason}")
-                check_strategy(daily_report=True, report_kind=report_kind)
+                check_strategy(daily_report=True, report_kind=report_kind, dedupe_report=True)
                 return
 
             print(f"[AUTO] Skipping report candidate: {report_reason}")
@@ -508,7 +517,7 @@ def run_auto_mode():
     if daily_report:
         report_kind, _ = report_kind_for_schedule(intended_utc)
         print(f"[AUTO] Running {report_kind} report: {daily_reason}")
-        check_strategy(daily_report=True, report_kind=report_kind)
+        check_strategy(daily_report=True, report_kind=report_kind, dedupe_report=True)
         return
 
     intraday_check, intraday_reason = should_run_intraday_check(intended_utc)

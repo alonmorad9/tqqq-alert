@@ -33,11 +33,11 @@ npx wrangler deploy
 The worker has two cron triggers:
 
 ```text
-*/10 13-21 * * 1-5
-45 13-20 * * 1-5
+*/10 13-21 * * MON-FRI
+45 13-20 * * MON-FRI
 ```
 
-Those are UTC times. The Python script still filters by the real NASDAQ session, so extra candidates outside trading hours should safely skip.
+Those are UTC times. Cloudflare treats weekday numbers differently from GitHub, so use `MON-FRI` instead of `1-5`. The Python script still filters by the real NASDAQ session, so extra candidates outside trading hours should safely skip.
 
 ## Direct API Call
 

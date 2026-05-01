@@ -85,9 +85,11 @@ Worker:
 Cloudflare cron schedules:
 
 ```toml
-"*/10 13-21 * * 1-5"
-"45 13-20 * * 1-5"
+"*/10 13-21 * * MON-FRI"
+"45 13-20 * * MON-FRI"
 ```
+
+Cloudflare weekday numbers are different from GitHub, so weekday names are used to avoid accidentally excluding Fridays.
 
 The Cloudflare Worker dispatches the GitHub workflow with:
 
@@ -246,9 +248,11 @@ Worker:
 תזמוני Cloudflare:
 
 ```toml
-"*/10 13-21 * * 1-5"
-"45 13-20 * * 1-5"
+"*/10 13-21 * * MON-FRI"
+"45 13-20 * * MON-FRI"
 ```
+
+מספרי ימי השבוע ב-Cloudflare שונים מ-GitHub, ולכן משתמשים בשמות ימים כדי לא להוציא בטעות את יום שישי.
 
 ה-Cloudflare Worker מפעיל את GitHub workflow עם:
 

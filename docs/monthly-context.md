@@ -1,6 +1,6 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-04-30
+Last updated: 2026-05-01
 
 ## English
 
@@ -91,6 +91,8 @@ Cloudflare cron schedules:
 
 Cloudflare weekday numbers are different from GitHub, so weekday names are used to avoid accidentally excluding Fridays.
 
+On 2026-05-01, the scheduler did not run on Friday because the old Cloudflare cron used `1-5`. In Cloudflare, weekday numbers start with Sunday, so that meant Sunday-Thursday. The fix was to use `MON-FRI`. After redeploying, the Cloudflare schedule was confirmed working.
+
 The Cloudflare Worker dispatches the GitHub workflow with:
 
 - `mode=auto`
@@ -134,6 +136,9 @@ Failure alerts:
 
 ### Recent Important Commits
 
+- `f2434b6` - Fix Cloudflare weekday schedule.
+- `91b2fe9` - Add Cloudflare scheduler logging.
+- `71cd3dd` - Add native schedule backup.
 - `93d7ef6` - Fix report distance signs.
 - `176c310` - Update workflow actions.
 - `ce81d23` - Add monitoring alerts.
@@ -253,6 +258,8 @@ Worker:
 ```
 
 מספרי ימי השבוע ב-Cloudflare שונים מ-GitHub, ולכן משתמשים בשמות ימים כדי לא להוציא בטעות את יום שישי.
+
+ב-2026-05-01 הסקדולר לא רץ ביום שישי כי ה-cron הישן של Cloudflare השתמש ב-`1-5`. ב-Cloudflare מספרי הימים מתחילים מיום ראשון, ולכן זה היה ראשון-חמישי. התיקון היה להשתמש ב-`MON-FRI`. אחרי deploy מחדש, התזמון של Cloudflare אומת כעובד.
 
 ה-Cloudflare Worker מפעיל את GitHub workflow עם:
 

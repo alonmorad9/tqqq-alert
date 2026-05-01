@@ -39,6 +39,32 @@ The worker has two cron triggers:
 
 Those are UTC times. Cloudflare treats weekday numbers differently from GitHub, so use `MON-FRI` instead of `1-5`. The Python script still filters by the real NASDAQ session, so extra candidates outside trading hours should safely skip.
 
+Important: Cloudflare weekday numbers start with Sunday. The old `1-5` pattern meant Sunday-Thursday and skipped Friday. Use weekday names to avoid that ambiguity.
+
+## Debugging Cron Runs
+
+To watch the Worker live:
+
+```bash
+npx wrangler tail tqqq-alert-scheduler --format=pretty
+```
+
+A healthy manual trigger should log:
+
+```text
+Manual trigger received
+Dispatching GitHub workflow
+GitHub dispatch succeeded
+```
+
+A healthy cron trigger should log:
+
+```text
+Scheduled trigger fired
+Dispatching GitHub workflow
+GitHub dispatch succeeded
+```
+
 ## Direct API Call
 
 Any external scheduler that can send an authenticated POST can use this request:

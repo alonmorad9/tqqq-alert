@@ -261,11 +261,102 @@ def fetch_market_data():
         ticker.columns = [c[0] for c in ticker.columns]
 
     ticker["SMA200"] = ticker["Close"].rolling(window=200).mean()
+    ticker["SMA20"] = ticker["Close"].rolling(window=20).mean()
+    ticker["SMA50"] = ticker["Close"].rolling(window=50).mean()
+    ticker["SMA60"] = ticker["Close"].rolling(window=60).mean()
+    ticker["RSI14"] = calculate_rsi(ticker["Close"], 14)
+
+    prev_close = ticker["Close"].shift(1)
+    true_range = pd.concat([
+        ticker["High"] - ticker["Low"],
+        (ticker["High"] - prev_close).abs(),
+        (ticker["Low"] - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    ticker["ATR14"] = true_range.rolling(window=14).mean()
     return ticker
+
+
+def calculate_rsi(close, window):
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(window=window).mean()
+    loss = (-delta.clip(upper=0)).rolling(window=window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 
 def money(value):
     return f"${value:.2f}"
+
+
+def build_risk_context(ticker, current_price, sma200, trailing_stop):
+    sma20 = float(ticker["SMA20"].iloc[-1])
+    sma50 = float(ticker["SMA50"].iloc[-1])
+    sma60 = float(ticker["SMA60"].iloc[-1])
+    rsi14 = float(ticker["RSI14"].iloc[-1])
+    atr14 = float(ticker["ATR14"].iloc[-1])
+    atr_pct = (atr14 / current_price) * 100 if current_price else 0.0
+    atr_stop_4x = current_price - (4 * atr14)
+
+    above_count = sum(current_price > value for value in [sma20, sma50, sma60, sma200])
+    if above_count == 4:
+        trend = "Strong bullish"
+    elif above_count >= 3:
+        trend = "Bullish"
+    elif current_price > sma200:
+        trend = "Mixed but above SMA200"
+    else:
+        trend = "Defensive"
+
+    if rsi14 >= 75:
+        momentum = "Very extended"
+    elif rsi14 >= 70:
+        momentum = "Extended"
+    elif rsi14 >= 55:
+        momentum = "Healthy"
+    elif rsi14 >= 45:
+        momentum = "Cooling"
+    else:
+        momentum = "Weak"
+
+    risk_points = 0
+    risk_notes = []
+    if rsi14 >= 75:
+        risk_points += 1
+        risk_notes.append("RSI very high")
+    elif rsi14 >= 70:
+        risk_notes.append("RSI extended")
+
+    if current_price < sma20:
+        risk_points += 1
+        risk_notes.append("below SMA20")
+    if atr_pct >= 8:
+        risk_points += 1
+        risk_notes.append("very high ATR")
+    elif atr_pct >= 5:
+        risk_notes.append("high ATR")
+    if current_price <= trailing_stop * 1.15:
+        risk_points += 2
+        risk_notes.append("near trailing stop")
+    elif current_price <= sma200 * 1.08:
+        risk_points += 1
+        risk_notes.append("near SMA200")
+
+    if risk_points >= 3:
+        risk_level = "High"
+    elif risk_points >= 1:
+        risk_level = "Elevated"
+    else:
+        risk_level = "Normal"
+
+    notes = ", ".join(risk_notes) if risk_notes else "no major warning"
+    return [
+        "🧭 Risk Context: advisory only",
+        f"Trend:         {trend}",
+        f"Momentum:      {momentum} (RSI14 {rsi14:.1f})",
+        f"ATR14:         ${atr14:.2f} ({atr_pct:.1f}% daily range)",
+        f"ATR Ref Stop:  ${atr_stop_4x:.2f} (4x ATR, not active)",
+        f"Risk Level:    {risk_level} — {notes}",
+    ]
 
 
 def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
@@ -404,6 +495,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     gap_to_sma = round(((sma200 - current_price) / current_price) * 100, 2)
     next_profit_target = avg_cost * next_profit_multiple if position_open and avg_cost else None
     position_status = "In position" if position_open else "Waiting for re-entry"
+    risk_context_lines = build_risk_context(ticker, current_price, sma200, trailing_stop)
 
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
@@ -432,6 +524,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         if next_profit_target:
             next_profit_pct = int(round((next_profit_multiple - 1) * 100))
             lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}  (+{next_profit_pct}% target)")
+        lines.extend([
+            "─" * 30,
+            *risk_context_lines,
+        ])
         lines.extend([
             "─" * 30,
             f"📦 Shares:       {shares:.4f}",

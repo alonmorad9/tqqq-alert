@@ -120,6 +120,8 @@ Daily reports:
 
 - Send a full Telegram status message.
 - Include current price, SMA200, trailing stop, position mode, cash, shares, total value, P&L, and next profit target.
+- Include an advisory risk context section inspired by the TradingAgents idea: trend, RSI momentum, ATR volatility, a 4x ATR reference stop, and risk level.
+- This risk context is not a trading trigger. Buy/sell/profit-taking instructions still come only from the deterministic strategy rules.
 
 Failure alerts:
 
@@ -166,6 +168,7 @@ Possible future improvements, only if needed:
 - Add a second price data source as fallback if Yahoo/yfinance becomes unreliable.
 - Add a weekly summary report.
 - Add a small dashboard or log file.
+- Log the daily risk context over time and later backtest whether risk warnings actually helped.
 - Add more robust state reconciliation if real trades differ from bot instructions.
 
 ---
@@ -288,6 +291,8 @@ Worker:
 
 - שולחים הודעת סטטוס מלאה לטלגרם.
 - כוללים מחיר נוכחי, SMA200, טריילינג סטופ, מצב פוזיציה, מזומן, מניות, ערך כולל, רווח/הפסד, ויעד הרווח הבא.
+- כוללים גם אזור הקשר סיכון בהשראת רעיון TradingAgents: מגמה, מומנטום RSI, תנודתיות ATR, סטופ ייחוס של 4x ATR, ורמת סיכון.
+- הקשר הסיכון הוא מידע בלבד ולא טריגר למסחר. הוראות קנייה/מכירה/לקיחת רווח עדיין מגיעות רק מכללי האסטרטגיה הדטרמיניסטיים.
 
 התראות כשל:
 
@@ -331,4 +336,5 @@ Worker:
 - להוסיף מקור מחירים נוסף לגיבוי אם Yahoo/yfinance יהפוך ללא אמין.
 - להוסיף דוח שבועי.
 - להוסיף דשבורד קטן או קובץ לוג.
+- לשמור את הקשר הסיכון היומי לאורך זמן, ואז לבדוק היסטורית אם אזהרות הסיכון באמת עזרו.
 - להוסיף מנגנון התאמה טוב יותר אם הפעולות האמיתיות שונות מהוראות הבוט.

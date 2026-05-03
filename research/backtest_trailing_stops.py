@@ -61,6 +61,8 @@ def load_prices(ticker):
     df["SMA100"] = df["Close"].rolling(100).mean()
     df["SMA150"] = df["Close"].rolling(150).mean()
     df["SMA200"] = df["Close"].rolling(200).mean()
+    df["EMA9"] = df["Close"].ewm(span=9, adjust=False).mean()
+    df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
     df["EMA100"] = df["Close"].ewm(span=100, adjust=False).mean()
     df["EMA150"] = df["Close"].ewm(span=150, adjust=False).mean()
     df["EMA200"] = df["Close"].ewm(span=200, adjust=False).mean()
@@ -247,18 +249,110 @@ def run_strategy(df, strategy):
     }
 
 
+def run_sniper_strategy(df, strategy):
+    cash = START_CASH
+    shares = 0.0
+    avg_cost = None
+    open_pos = False
+    stop = None
+    highest_high_since_entry = None
+    values = []
+    trades = []
+    trim_mode = strategy.get("trim_mode", "daily")
+    trim_armed = True
+    atr_mult = strategy.get("atr_mult", 3.0)
+    trim_rsi = strategy.get("trim_rsi", 80)
+    entry_rsi_max = strategy.get("entry_rsi_max", 70)
+    trim_fraction = strategy.get("trim_fraction", 0.20)
+
+    rows = list(df.iterrows())
+    for i, (date, row) in enumerate(rows):
+        if i == 0:
+            values.append(cash)
+            continue
+
+        prev = rows[i - 1][1]
+        price = row["Close"]
+        value = cash + shares * price
+        values.append(value)
+
+        long_trend = row["QQQ_Close"] > row["QQQ_SMA200"]
+        momentum_up = row["QQQ_EMA9"] > row["QQQ_EMA21"]
+        momentum_cross_down = prev["QQQ_EMA9"] >= prev["QQQ_EMA21"] and row["QQQ_EMA9"] < row["QQQ_EMA21"]
+        qqq_overbought = row["QQQ_RSI14"] > trim_rsi
+        qqq_crossed_overbought = prev["QQQ_RSI14"] <= trim_rsi and row["QQQ_RSI14"] > trim_rsi
+
+        if open_pos:
+            highest_high_since_entry = max(highest_high_since_entry, row["High"])
+            candidate_stop = highest_high_since_entry - atr_mult * row["ATR14"]
+            stop = max(stop or candidate_stop, candidate_stop)
+            hit_stop = row["Close"] < stop
+
+            if momentum_cross_down or not long_trend or hit_stop:
+                reason = "momentum" if momentum_cross_down else "trend" if not long_trend else "stop"
+                cash += shares * price
+                trades.append((date, reason, "sell_all", price, shares, value))
+                shares = 0.0
+                avg_cost = None
+                open_pos = False
+                stop = None
+                highest_high_since_entry = None
+                trim_armed = True
+            else:
+                in_profit = avg_cost is not None and price > avg_cost
+                should_trim = qqq_overbought if trim_mode == "daily" else qqq_crossed_overbought and trim_armed
+                if qqq_overbought is False:
+                    trim_armed = True
+                if in_profit and should_trim:
+                    sell_shares = shares * trim_fraction
+                    cash += sell_shares * price
+                    shares -= sell_shares
+                    trades.append((date, "rsi", "trim", price, sell_shares, value))
+                    if trim_mode != "daily":
+                        trim_armed = False
+
+        if not open_pos and long_trend and momentum_up and row["QQQ_RSI14"] < entry_rsi_max:
+            shares = cash / price
+            avg_cost = price
+            cash = 0.0
+            open_pos = True
+            highest_high_since_entry = row["High"]
+            stop = highest_high_since_entry - atr_mult * row["ATR14"]
+            trim_armed = row["QQQ_RSI14"] <= trim_rsi
+            trades.append((date, "entry", "buy", price, shares, value))
+
+    final_value = cash + shares * df["Close"].iloc[-1]
+    years = (pd.Timestamp(df.index[-1]) - pd.Timestamp(df.index[0])).days / 365.25
+    sell_all_count = sum(1 for t in trades if t[2] == "sell_all")
+    trim_count = sum(1 for t in trades if t[2] == "trim")
+    return {
+        "name": strategy["name"],
+        "group": strategy.get("group", "sniper"),
+        "final": final_value,
+        "cagr": cagr(final_value, years),
+        "maxdd": max_drawdown(values),
+        "calmar": cagr(final_value, years) / abs(max_drawdown(values)),
+        "trades": len(trades),
+        "exits": sell_all_count,
+        "trims": trim_count,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ticker", default=TICKER)
     args = parser.parse_args()
 
     df = load_prices(args.ticker)
+    qqq = load_prices("QQQ")[["Close", "SMA200", "EMA9", "EMA21", "RSI14"]].add_prefix("QQQ_")
     vix = load_prices("^VIX")[["Close"]].rename(columns={"Close": "VIX"})
-    df = df.join(vix, how="left").ffill().dropna()
-    current_stop = {"kind": "rolling_pct", "lookback": 30, "pct": 0.35}
+    df = df.join(qqq, how="left").join(vix, how="left").ffill().dropna()
+    old_stop = {"kind": "rolling_pct", "lookback": 30, "pct": 0.35}
+    live_stop = {"kind": "ratchet_pct", "pct": 0.25, "stop_trigger": "below"}
     stop_tests = [
         {"name": "SMA200 only, no stop", "kind": "none"},
-        {"name": "Current rolling 30d high -35%", **current_stop},
+        {"name": "Old rolling 30d high -35%", **old_stop},
+        {"name": "Live ratchet high since entry -25%", **live_stop},
         {"name": "Ratchet high since entry -35%", "kind": "ratchet_pct", "pct": 0.35},
         {"name": "Ratchet high since entry -30%", "kind": "ratchet_pct", "pct": 0.30},
         {"name": "Ratchet high since entry -25%", "kind": "ratchet_pct", "pct": 0.25},
@@ -280,34 +374,48 @@ def main():
     ]
 
     profit_tests = [
-        {"name": "Current stop, no profit taking", **current_stop, "profit_step": None, "profit_sell_fraction": 0.0, "group": "profit"},
-        {"name": "Current stop, +50% sell 25%", **current_stop, "profit_step": 0.5, "profit_sell_fraction": 0.25, "group": "profit"},
-        {"name": "Current stop, +75% sell 25%", **current_stop, "profit_step": 0.75, "profit_sell_fraction": 0.25, "group": "profit"},
-        {"name": "Current stop, +100% sell 25%", **current_stop, "profit_step": 1.0, "profit_sell_fraction": 0.25, "group": "profit"},
-        {"name": "Current stop, +100% sell 50%", **current_stop, "profit_step": 1.0, "profit_sell_fraction": 0.5, "group": "profit"},
-        {"name": "Current stop, +150% sell 50%", **current_stop, "profit_step": 1.5, "profit_sell_fraction": 0.5, "group": "profit"},
-        {"name": "Current stop, +200% sell 50%", **current_stop, "profit_step": 2.0, "profit_sell_fraction": 0.5, "group": "profit"},
+        {"name": "Live stop, no profit taking", **live_stop, "profit_step": None, "profit_sell_fraction": 0.0, "group": "profit"},
+        {"name": "Live stop, +50% sell 25%", **live_stop, "profit_step": 0.5, "profit_sell_fraction": 0.25, "group": "profit"},
+        {"name": "Live stop, +75% sell 25%", **live_stop, "profit_step": 0.75, "profit_sell_fraction": 0.25, "group": "profit"},
+        {"name": "Live stop, +100% sell 25%", **live_stop, "profit_step": 1.0, "profit_sell_fraction": 0.25, "group": "profit"},
+        {"name": "Live stop, +100% sell 50%", **live_stop, "profit_step": 1.0, "profit_sell_fraction": 0.5, "group": "profit"},
+        {"name": "Live stop, +150% sell 50%", **live_stop, "profit_step": 1.5, "profit_sell_fraction": 0.5, "group": "profit"},
+        {"name": "Live stop, +200% sell 50%", **live_stop, "profit_step": 2.0, "profit_sell_fraction": 0.5, "group": "profit"},
     ]
 
     entry_tests = [
-        {"name": "Live re-entry: fresh SMA200 cross only", **current_stop, "entry_mode": "cross_only", "group": "entry"},
-        {"name": "Aggressive re-entry: any close above SMA200", **current_stop, "entry_mode": "above_sma", "group": "entry"},
+        {"name": "Live re-entry: fresh SMA200 cross only", **live_stop, "entry_mode": "cross_only", "group": "entry"},
+        {"name": "Aggressive re-entry: any close above SMA200", **live_stop, "entry_mode": "above_sma", "group": "entry"},
     ]
 
     trend_tests = [
-        {"name": "SMA200 trend, current stop", **current_stop, "trend_col": "SMA200", "group": "trend"},
-        {"name": "SMA150 trend, current stop", **current_stop, "trend_col": "SMA150", "group": "trend"},
-        {"name": "SMA100 trend, current stop", **current_stop, "trend_col": "SMA100", "group": "trend"},
-        {"name": "EMA200 trend, current stop", **current_stop, "trend_col": "EMA200", "group": "trend"},
-        {"name": "EMA150 trend, current stop", **current_stop, "trend_col": "EMA150", "group": "trend"},
-        {"name": "EMA100 trend, current stop", **current_stop, "trend_col": "EMA100", "group": "trend"},
+        {"name": "SMA200 trend, live stop", **live_stop, "trend_col": "SMA200", "group": "trend"},
+        {"name": "SMA150 trend, live stop", **live_stop, "trend_col": "SMA150", "group": "trend"},
+        {"name": "SMA100 trend, live stop", **live_stop, "trend_col": "SMA100", "group": "trend"},
+        {"name": "EMA200 trend, live stop", **live_stop, "trend_col": "EMA200", "group": "trend"},
+        {"name": "EMA150 trend, live stop", **live_stop, "trend_col": "EMA150", "group": "trend"},
+        {"name": "EMA100 trend, live stop", **live_stop, "trend_col": "EMA100", "group": "trend"},
     ]
 
     vix_tests = [
-        {"name": "SMA200 + VIX exit>30 re-enter<=25", **current_stop, "entry_mode": "above_sma", "vix_exit": 30, "vix_entry": 25, "group": "vix"},
-        {"name": "SMA200 + VIX exit>35 re-enter<=30", **current_stop, "entry_mode": "above_sma", "vix_exit": 35, "vix_entry": 30, "group": "vix"},
-        {"name": "SMA200 + VIX exit>40 re-enter<=30", **current_stop, "entry_mode": "above_sma", "vix_exit": 40, "vix_entry": 30, "group": "vix"},
-        {"name": "SMA200 + VIX exit>30 re-enter<=30", **current_stop, "entry_mode": "above_sma", "vix_exit": 30, "vix_entry": 30, "group": "vix"},
+        {"name": "SMA200 + VIX exit>30 re-enter<=25", **live_stop, "entry_mode": "above_sma", "vix_exit": 30, "vix_entry": 25, "group": "vix"},
+        {"name": "SMA200 + VIX exit>35 re-enter<=30", **live_stop, "entry_mode": "above_sma", "vix_exit": 35, "vix_entry": 30, "group": "vix"},
+        {"name": "SMA200 + VIX exit>40 re-enter<=30", **live_stop, "entry_mode": "above_sma", "vix_exit": 40, "vix_entry": 30, "group": "vix"},
+        {"name": "SMA200 + VIX exit>30 re-enter<=30", **live_stop, "entry_mode": "above_sma", "vix_exit": 30, "vix_entry": 30, "group": "vix"},
+    ]
+
+    sniper_tests = [
+        {"name": "Sniper as proposed: ATR3, RSI80 daily trims", "atr_mult": 3.0, "trim_mode": "daily", "group": "sniper"},
+        {"name": "Sniper ATR3, RSI80 one trim per RSI wave", "atr_mult": 3.0, "trim_mode": "cross", "group": "sniper"},
+        {"name": "Sniper ATR8, RSI80 one trim per RSI wave", "atr_mult": 8.0, "trim_mode": "cross", "group": "sniper"},
+    ] + [
+        {
+            "name": f"Sniper optimized ATR{mult:g}, RSI80 wave trim",
+            "atr_mult": mult,
+            "trim_mode": "cross",
+            "group": "sniper",
+        }
+        for mult in np.arange(2.0, 10.5, 0.5)
     ]
 
     optimized_tests = [
@@ -358,6 +466,7 @@ def main():
     )
 
     results = [run_strategy(df, s) for s in strategies]
+    results.extend(run_sniper_strategy(df, s) for s in sniper_tests)
     out = pd.DataFrame(results).sort_values(["final", "calmar"], ascending=False)
     display = out.copy()
     display["final"] = display["final"].map(lambda x: f"{x:.1f}x")
@@ -372,6 +481,7 @@ def main():
         ("vix", "VIX safety-switch comparison"),
         ("profit", "Profit-taking comparison"),
         ("stop", "Trailing-stop comparison"),
+        ("sniper", "Adaptive Nasdaq-100 Leveraged Sniper comparison"),
         ("optimized", "Expanded stop optimization"),
     ]:
         group_display = display[display["group"] == group].drop(columns=["group"])

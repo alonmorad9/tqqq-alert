@@ -16,7 +16,7 @@ TICKER = "TQQQ"
 
 STATE_FILE = Path("position_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
-TRAILING_STOP_PCT = 0.35
+TRAILING_STOP_PCT = 0.25
 PROFIT_STEP_PCT = 1.0
 PROFIT_SELL_FRACTION = 0.5
 
@@ -227,6 +227,7 @@ def default_state():
         "avg_cost": AVG_COST,
         "shares": SHARES,
         "cash": 0.0,
+        "highest_high_since_entry": None,
         "next_profit_multiple": 2.0,
         "last_action": None,
         "last_action_at": None,
@@ -260,6 +261,9 @@ def fetch_market_data():
     if isinstance(ticker.columns, pd.MultiIndex):
         ticker.columns = [c[0] for c in ticker.columns]
 
+    if ticker.empty:
+        raise RuntimeError(f"No market data returned for {TICKER}")
+
     ticker["SMA200"] = ticker["Close"].rolling(window=200).mean()
     ticker["SMA20"] = ticker["Close"].rolling(window=20).mean()
     ticker["SMA50"] = ticker["Close"].rolling(window=50).mean()
@@ -286,6 +290,38 @@ def calculate_rsi(close, window):
 
 def money(value):
     return f"${value:.2f}"
+
+
+def date_only(value):
+    if hasattr(value, "date"):
+        return value.date()
+    return datetime.fromisoformat(str(value)).date()
+
+
+def initialize_highest_high_since_entry(state, ticker):
+    if not state.get("position_open"):
+        return None
+
+    existing_high = state.get("highest_high_since_entry")
+    if existing_high is not None:
+        return float(existing_high)
+
+    entry_date = state.get("entry_date")
+    if not entry_date:
+        return float(ticker["High"].iloc[-1])
+
+    entry_day = datetime.fromisoformat(entry_date).date()
+    highs_since_entry = ticker[ticker.index.map(date_only) >= entry_day]["High"]
+    if highs_since_entry.empty:
+        return float(ticker["High"].iloc[-1])
+
+    return float(highs_since_entry.max())
+
+
+def calculate_trailing_stop(highest_high):
+    if highest_high is None:
+        return None
+    return round(float(highest_high) * (1 - TRAILING_STOP_PCT), 2)
 
 
 def build_risk_context(ticker, current_price, sma200, trailing_stop):
@@ -334,7 +370,7 @@ def build_risk_context(ticker, current_price, sma200, trailing_stop):
         risk_notes.append("very high ATR")
     elif atr_pct >= 5:
         risk_notes.append("high ATR")
-    if current_price <= trailing_stop * 1.15:
+    if trailing_stop is not None and current_price <= trailing_stop * 1.15:
         risk_points += 2
         risk_notes.append("near trailing stop")
     elif current_price <= sma200 * 1.08:
@@ -364,19 +400,26 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     ticker = fetch_market_data()
 
     current_price = float(ticker["Close"].iloc[-1])
+    current_high = float(ticker["High"].iloc[-1])
     sma200 = float(ticker["SMA200"].iloc[-1])
-    recent_high = float(ticker["High"].tail(30).max())
-    trailing_stop = round(recent_high * (1 - TRAILING_STOP_PCT), 2)
     prev_price = float(ticker["Close"].iloc[-2])
     prev_sma200 = float(ticker["SMA200"].iloc[-2])
-    prev_recent_high = float(ticker["High"].tail(31).iloc[:-1].max())
-    prev_trailing_stop = round(prev_recent_high * (1 - TRAILING_STOP_PCT), 2)
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
     next_profit_multiple = float(state.get("next_profit_multiple", 2.0))
+    state_changed = False
+    state_dirty = False
+    highest_high_since_entry = initialize_highest_high_since_entry(state, ticker)
+    if position_open:
+        updated_high = max(highest_high_since_entry or current_high, current_high)
+        if state.get("highest_high_since_entry") != round(updated_high, 4):
+            highest_high_since_entry = updated_high
+            state["highest_high_since_entry"] = round(highest_high_since_entry, 4)
+            state_dirty = True
+    trailing_stop = calculate_trailing_stop(highest_high_since_entry)
 
     position_value = shares * current_price
     cost_basis = shares * avg_cost
@@ -387,7 +430,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     # ── SIGNAL DETECTION ──────────────────────────────────
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
-    hit_trailing_stop = prev_price >= prev_trailing_stop and current_price < trailing_stop
+    hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_profit_target = (
         position_open
         and shares > 0
@@ -396,7 +439,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     )
 
     action = None
-    state_changed = False
     instruction_lines = []
 
     if position_open and hit_trailing_stop:
@@ -409,6 +451,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "cash": round(cash, 2),
             "avg_cost": None,
             "entry_date": None,
+            "highest_high_since_entry": None,
             "next_profit_multiple": 2.0,
             "last_action": "sell_all_trailing_stop",
         })
@@ -425,6 +468,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "cash": round(cash, 2),
             "avg_cost": None,
             "entry_date": None,
+            "highest_high_since_entry": None,
             "next_profit_multiple": 2.0,
             "last_action": "sell_all_sma200",
         })
@@ -459,6 +503,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 "avg_cost": round(current_price, 4),
                 "shares": round(shares, 6),
                 "cash": cash,
+                "highest_high_since_entry": round(current_high, 4),
                 "next_profit_multiple": 2.0,
                 "last_action": "buy_sma200",
             })
@@ -469,12 +514,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         else:
             action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
             instruction_lines.append("No tracked cash is available; update position_state.json after buying.")
-    elif position_open and current_price > sma200 and current_price > trailing_stop:
+    elif position_open and trailing_stop is not None and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
     elif current_price < sma200:
         action = "⏸️ WAIT — Price below SMA200" if not position_open else "⚠️ CAUTION — Price below SMA200"
     else:
         action = "⏸️ WAIT — No open position" if not position_open else "⚠️ CAUTION — Price near stop level"
+
+    if state_changed:
+        state_dirty = True
 
     is_signal = state_changed or (not position_open and crossed_above_sma)
 
@@ -483,6 +531,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
     next_profit_multiple = float(state.get("next_profit_multiple", 2.0))
+    highest_high_since_entry = state.get("highest_high_since_entry")
+    trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     position_value = shares * current_price
     cost_basis = shares * avg_cost
     total_value = cash + position_value
@@ -491,7 +541,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
 
     date_str = ticker.index[-1].strftime("%d/%m/%Y")
     pnl_emoji = "🟢" if pnl >= 0 else "🔴"
-    gap_to_stop = round(((trailing_stop - current_price) / current_price) * 100, 2)
+    gap_to_stop = round(((trailing_stop - current_price) / current_price) * 100, 2) if trailing_stop is not None else None
     gap_to_sma = round(((sma200 - current_price) / current_price) * 100, 2)
     next_profit_target = avg_cost * next_profit_multiple if position_open and avg_cost else None
     position_status = "In position" if position_open else "Waiting for re-entry"
@@ -519,8 +569,12 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"Mode:          {position_status}",
             f"💰 Price:        ${current_price:.2f}",
             f"📈 SMA200:       ${sma200:.2f}  ({gap_to_sma:+.1f}% away)",
-            f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)",
         ]
+        if trailing_stop is not None:
+            lines.append(f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)")
+            lines.append(f"🏔️ High Since Entry: ${float(highest_high_since_entry):.2f}")
+        else:
+            lines.append("🛑 Trail Stop:   Not active")
         if next_profit_target:
             next_profit_pct = int(round((next_profit_multiple - 1) * 100))
             lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}  (+{next_profit_pct}% target)")
@@ -546,8 +600,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         send_telegram(msg)
         if dedupe_report:
             state["last_report_key"] = report_key
-            state_changed = True
-        if state_changed:
+            state_dirty = True
+        if state_dirty:
             save_state(state)
 
     # ── INTRADAY: only send if signal ─────────────────────
@@ -559,8 +613,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "─" * 30,
             f"💰 Price:      ${current_price:.2f}",
             f"📈 SMA200:     ${sma200:.2f}",
-            f"🛑 Trail Stop: ${trailing_stop:.2f}",
         ]
+        if trailing_stop is not None:
+            lines.append(f"🛑 Trail Stop: ${trailing_stop:.2f}")
         if next_profit_target:
             lines.append(f"🎯 Next Profit: ${next_profit_target:.2f}")
         lines.extend([
@@ -570,8 +625,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         ])
         msg = "\n".join(lines)
         send_telegram(msg)
-        if state_changed:
+        if state_dirty:
             save_state(state)
+
+    elif state_dirty:
+        save_state(state)
 
     print(f"[{'DAILY' if daily_report else 'CHECK'}] {action} | Price: {current_price:.2f}")
 

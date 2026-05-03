@@ -1,6 +1,6 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-05-01
+Last updated: 2026-05-03
 
 ## English
 
@@ -16,12 +16,18 @@ The current strategy is a high-risk/high-reward long-term TQQQ strategy:
 
 1. Hold TQQQ while price is above the 200-day SMA.
 2. Sell all remaining shares if price crosses below the 200-day SMA.
-3. Sell all remaining shares if the 35% trailing stop is hit.
+3. Sell all remaining shares if the true ratcheting 25% trailing stop is hit.
 4. Re-enter when price crosses back above the 200-day SMA.
 5. Take profit repeatedly: every time price reaches another +100% from the entry price, sell 50% of the remaining shares.
 6. After a full exit, the bot waits for the next re-entry signal and starts the cycle again.
 
 There is no separate 5% hard stop anymore.
+
+The trailing stop is now:
+
+> Highest high since entry x 0.75
+
+It only moves upward while the position is open. It resets after a full exit and starts again after the next re-entry.
 
 ### Why This Strategy Was Chosen
 
@@ -41,6 +47,17 @@ Smaller profit-taking rules were tested too. They can feel better emotionally be
 
 This is still a volatile strategy. A roughly 50% drawdown happened historically even with the improved rules.
 
+On 2026-05-03, trailing stop variants were retested from 2010-11-24 through 2026-05-01. The best simple stop improvement was replacing the old rolling 30-day high minus 35% stop with a true 25% ratchet from the highest high since entry:
+
+| Strategy | Final Multiple | CAGR | Max Drawdown |
+| --- | ---: | ---: | ---: |
+| Old rolling 30-day high -35% stop | 46.5x | 28.3% | -42.7% |
+| Exact low -4x ATR14 stop | 11.1x | 16.9% | -42.4% |
+| Exact low -8x ATR14 stop | 61.6x | 30.6% | -42.7% |
+| Highest high since entry -25% stop | 66.0x | 31.2% | -42.7% |
+
+The chosen stop is therefore the 25% true ratchet. ATR-based stops were tested, but the useful ATR version had to be very wide and still did not beat the simpler 25% ratchet.
+
 ### Current Position State
 
 The live state is stored in `position_state.json`.
@@ -52,6 +69,7 @@ Current starting state as of 2026-04-30:
   "avg_cost": 61.54,
   "cash": 0.0,
   "entry_date": "2026-04-29",
+  "highest_high_since_entry": 65.84,
   "last_action": null,
   "last_action_at": null,
   "next_profit_multiple": 2.0,
@@ -66,6 +84,7 @@ Meaning:
 - The bot assumes there is an open TQQQ position.
 - Average cost is `$61.54`.
 - Shares are `40.4647`.
+- Highest high since entry is currently tracked as `$65.84`, making the active 25% trailing stop about `$49.38`.
 - The next profit-taking target is `2.0x` the entry price, around `$123.08`.
 - If a full exit happens, the bot will track cash and later tell when to re-enter.
 
@@ -187,12 +206,18 @@ Possible future improvements, only if needed:
 
 1. להחזיק TQQQ כל עוד המחיר מעל SMA200.
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
-3. למכור את כל שאר המניות אם הטריילינג סטופ של 35% מופעל.
+3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 25% מופעל.
 4. להיכנס מחדש כשהמחיר חוצה בחזרה מעל SMA200.
 5. לקחת רווח שוב ושוב: בכל פעם שהמחיר מגיע לעוד +100% ממחיר הכניסה, למכור 50% מהמניות שנותרו.
 6. אחרי יציאה מלאה, הבוט מחכה לאיתות כניסה חדש ומתחיל את המחזור מחדש.
 
 אין יותר סטופ קשיח נפרד של 5%.
+
+הטריילינג סטופ עכשיו הוא:
+
+> המחיר הגבוה ביותר מאז הכניסה x 0.75
+
+הסטופ רק עולה בזמן שהפוזיציה פתוחה. אחרי מכירה מלאה הוא מתאפס, ומתחיל מחדש אחרי הכניסה הבאה.
 
 ### למה בחרנו באסטרטגיה הזו
 
@@ -212,6 +237,17 @@ Possible future improvements, only if needed:
 
 זו עדיין אסטרטגיה תנודתית. גם עם הכללים המשופרים הייתה היסטורית ירידה של בערך 50%.
 
+ב-2026-05-03 בדקנו מחדש וריאציות של טריילינג סטופ מ-2010-11-24 עד 2026-05-01. השיפור הכי טוב והכי פשוט היה להחליף את הסטופ הישן של rolling 30-day high פחות 35% בטריילינג סטופ אמיתי של 25% מהשיא מאז הכניסה:
+
+| אסטרטגיה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית |
+| --- | ---: | ---: | ---: |
+| סטופ ישן: שיא 30 יום פחות 35% | 46.5x | 28.3% | -42.7% |
+| סטופ ATR: low -4x ATR14 | 11.1x | 16.9% | -42.4% |
+| סטופ ATR: low -8x ATR14 | 61.6x | 30.6% | -42.7% |
+| שיא מאז הכניסה פחות 25% | 66.0x | 31.2% | -42.7% |
+
+לכן הסטופ שנבחר הוא טריילינג אמיתי של 25%. נבדקו גם סטופים לפי ATR, אבל הגרסה הטובה הייתה צריכה להיות רחבה מאוד ועדיין לא ניצחה את כלל ה-25% הפשוט.
+
 ### מצב הפוזיציה הנוכחי
 
 המצב החי נשמר בקובץ `position_state.json`.
@@ -223,6 +259,7 @@ Possible future improvements, only if needed:
   "avg_cost": 61.54,
   "cash": 0.0,
   "entry_date": "2026-04-29",
+  "highest_high_since_entry": 65.84,
   "last_action": null,
   "last_action_at": null,
   "next_profit_multiple": 2.0,
@@ -237,6 +274,7 @@ Possible future improvements, only if needed:
 - הבוט מניח שיש פוזיציה פתוחה ב-TQQQ.
 - מחיר ממוצע הוא `$61.54`.
 - כמות המניות היא `40.4647`.
+- השיא מאז הכניסה נשמר כרגע כ-`$65.84`, ולכן הטריילינג סטופ הפעיל הוא בערך `$49.38`.
 - יעד לקיחת הרווח הבא הוא `2.0x` ממחיר הכניסה, בערך `$123.08`.
 - אם תהיה יציאה מלאה, הבוט יעקוב אחרי המזומן ויגיד מתי להיכנס מחדש.
 

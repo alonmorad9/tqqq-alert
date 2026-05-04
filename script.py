@@ -17,8 +17,9 @@ TICKER = "TQQQ"
 STATE_FILE = Path("position_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
 TRAILING_STOP_PCT = 0.25
-PROFIT_STEP_PCT = 1.0
-PROFIT_SELL_FRACTION = 0.5
+INITIAL_PROFIT_MULTIPLE = 2.25
+PROFIT_STEP_PCT = 1.25
+PROFIT_SELL_FRACTION = 0.75
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -228,7 +229,7 @@ def default_state():
         "shares": SHARES,
         "cash": 0.0,
         "highest_high_since_entry": None,
-        "next_profit_multiple": 2.0,
+        "next_profit_multiple": INITIAL_PROFIT_MULTIPLE,
         "last_action": None,
         "last_action_at": None,
         "last_report_key": None,
@@ -409,7 +410,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
-    next_profit_multiple = float(state.get("next_profit_multiple", 2.0))
+    next_profit_multiple = float(state.get("next_profit_multiple", INITIAL_PROFIT_MULTIPLE))
     state_changed = False
     state_dirty = False
     highest_high_since_entry = initialize_highest_high_since_entry(state, ticker)
@@ -452,7 +453,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "avg_cost": None,
             "entry_date": None,
             "highest_high_since_entry": None,
-            "next_profit_multiple": 2.0,
+            "next_profit_multiple": INITIAL_PROFIT_MULTIPLE,
             "last_action": "sell_all_trailing_stop",
         })
         state_changed = True
@@ -469,7 +470,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "avg_cost": None,
             "entry_date": None,
             "highest_high_since_entry": None,
-            "next_profit_multiple": 2.0,
+            "next_profit_multiple": INITIAL_PROFIT_MULTIPLE,
             "last_action": "sell_all_sma200",
         })
         state_changed = True
@@ -489,7 +490,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         })
         state_changed = True
         action = f"💰 TAKE PROFIT — +{target_pct}% TARGET HIT"
-        instruction_lines.append(f"Sell 50% of remaining shares: {sell_shares:.4f}")
+        sell_pct = int(round(PROFIT_SELL_FRACTION * 100))
+        instruction_lines.append(f"Sell {sell_pct}% of remaining shares: {sell_shares:.4f}")
         instruction_lines.append(f"Keep riding with: {shares:.4f} shares")
     elif not position_open and crossed_above_sma:
         buy_cash = cash
@@ -504,7 +506,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 "shares": round(shares, 6),
                 "cash": cash,
                 "highest_high_since_entry": round(current_high, 4),
-                "next_profit_multiple": 2.0,
+                "next_profit_multiple": INITIAL_PROFIT_MULTIPLE,
                 "last_action": "buy_sma200",
             })
             state_changed = True
@@ -530,7 +532,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
-    next_profit_multiple = float(state.get("next_profit_multiple", 2.0))
+    next_profit_multiple = float(state.get("next_profit_multiple", INITIAL_PROFIT_MULTIPLE))
     highest_high_since_entry = state.get("highest_high_since_entry")
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     position_value = shares * current_price

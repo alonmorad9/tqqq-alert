@@ -10,8 +10,8 @@ import requests
 
 TICKER = "TQQQ"
 START_CASH = 1.0
-PROFIT_STEP = 1.0
-PROFIT_SELL_FRACTION = 0.5
+PROFIT_STEP = 1.25
+PROFIT_SELL_FRACTION = 0.75
 
 
 def fetch_yahoo_chart(ticker):
@@ -144,13 +144,13 @@ def run_strategy(df, strategy):
     shares = 0.0
     avg_cost = None
     open_pos = False
-    next_profit_multiple = 2.0
     stop = None
     highest_high_since_entry = None
     values = []
     trades = []
     profit_step = strategy.get("profit_step", PROFIT_STEP)
     profit_sell_fraction = strategy.get("profit_sell_fraction", PROFIT_SELL_FRACTION)
+    next_profit_multiple = 1.0 + profit_step if profit_step else 2.0
     entry_mode = strategy.get("entry_mode", "cross_only")
     trend_col = strategy.get("trend_col", "SMA200")
     vix_exit = strategy.get("vix_exit")
@@ -202,7 +202,7 @@ def run_strategy(df, strategy):
                 shares = 0.0
                 avg_cost = None
                 open_pos = False
-                next_profit_multiple = 2.0
+                next_profit_multiple = 1.0 + profit_step if profit_step else 2.0
                 stop = None
                 highest_high_since_entry = None
             elif hit_profit:
@@ -223,7 +223,7 @@ def run_strategy(df, strategy):
             avg_cost = price
             cash = 0.0
             open_pos = True
-            next_profit_multiple = 2.0
+            next_profit_multiple = 1.0 + profit_step if profit_step else 2.0
             highest_high_since_entry = row["High"]
             state = {
                 "highest_high_since_entry": highest_high_since_entry,
@@ -375,6 +375,8 @@ def main():
 
     profit_tests = [
         {"name": "Live stop, no profit taking", **live_stop, "profit_step": None, "profit_sell_fraction": 0.0, "group": "profit"},
+        {"name": "Live stop, +25% sell 25%", **live_stop, "profit_step": 0.25, "profit_sell_fraction": 0.25, "group": "profit"},
+        {"name": "Live stop, +25% sell 33%", **live_stop, "profit_step": 0.25, "profit_sell_fraction": 0.33, "group": "profit"},
         {"name": "Live stop, +50% sell 25%", **live_stop, "profit_step": 0.5, "profit_sell_fraction": 0.25, "group": "profit"},
         {"name": "Live stop, +75% sell 25%", **live_stop, "profit_step": 0.75, "profit_sell_fraction": 0.25, "group": "profit"},
         {"name": "Live stop, +100% sell 25%", **live_stop, "profit_step": 1.0, "profit_sell_fraction": 0.25, "group": "profit"},

@@ -1,6 +1,6 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-05-03
+Last updated: 2026-05-04
 
 ## English
 
@@ -18,7 +18,7 @@ The current strategy is a high-risk/high-reward long-term TQQQ strategy:
 2. Sell all remaining shares if price crosses below the 200-day SMA.
 3. Sell all remaining shares if the true ratcheting 25% trailing stop is hit.
 4. Re-enter when price crosses back above the 200-day SMA.
-5. Take profit repeatedly: every time price reaches another +100% from the entry price, sell 50% of the remaining shares.
+5. Take profit repeatedly: every time price reaches another +125% from the entry price, sell 75% of the remaining shares.
 6. After a full exit, the bot waits for the next re-entry signal and starts the cycle again.
 
 There is no separate 5% hard stop anymore.
@@ -31,19 +31,23 @@ It only moves upward while the position is open. It resets after a full exit and
 
 ### Why This Strategy Was Chosen
 
-Historical TQQQ tests from 2010-11-24 through 2026-04-30 showed:
+Historical TQQQ tests originally showed that profit-taking helped the strategy compound better than no profit-taking.
+
+On 2026-05-04, profit-taking was retested with the current 25% ratcheting stop from 2010-11-24 through 2026-05-01. An earlier quick sweep was corrected because it had mislabeled the first profit target. The corrected test showed:
 
 | Strategy | Final Multiple | CAGR | Max Drawdown |
 | --- | ---: | ---: | ---: |
-| No profit taking | 73.1x | 32.1% | -49.5% |
-| Every +50%, sell 25% | 103.1x | 35.0% | -49.5% |
-| Every +100%, sell 50% | 108.1x | 35.5% | -49.5% |
+| No profit taking | 55.6x | 29.7% | -42.7% |
+| Every +100%, sell 50% | 66.0x | 31.2% | -42.7% |
+| Every +50%, sell 25% | 67.6x | 31.4% | -42.7% |
+| Every +125%, sell 67% | 76.7x | 32.5% | -42.7% |
+| Every +125%, sell 75% | 77.6x | 32.6% | -42.7% |
 
 The selected rule is therefore:
 
-> Every +100% gain from entry, sell 50% of the remaining shares.
+> Every +125% gain from entry, sell 75% of the remaining shares.
 
-Smaller profit-taking rules were tested too. They can feel better emotionally because they act more often, but historically they reduced compounding or did not improve risk enough to justify the extra activity.
+This acts less often than smaller trims, but it tested best for final return while keeping the same max drawdown in the historical test.
 
 This is still a volatile strategy. A roughly 50% drawdown happened historically even with the improved rules.
 
@@ -72,7 +76,7 @@ Current starting state as of 2026-04-30:
   "highest_high_since_entry": 65.84,
   "last_action": null,
   "last_action_at": null,
-  "next_profit_multiple": 2.0,
+  "next_profit_multiple": 2.25,
   "position_open": true,
   "shares": 40.4647,
   "ticker": "TQQQ"
@@ -85,7 +89,7 @@ Meaning:
 - Average cost is `$61.54`.
 - Shares are `40.4647`.
 - Highest high since entry is currently tracked as `$65.84`, making the active 25% trailing stop about `$49.38`.
-- The next profit-taking target is `2.0x` the entry price, around `$123.08`.
+- The next profit-taking target is `2.25x` the entry price, around `$138.47`.
 - If a full exit happens, the bot will track cash and later tell when to re-enter.
 
 If real trades are made manually, `position_state.json` must match reality.
@@ -208,7 +212,7 @@ Possible future improvements, only if needed:
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
 3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 25% מופעל.
 4. להיכנס מחדש כשהמחיר חוצה בחזרה מעל SMA200.
-5. לקחת רווח שוב ושוב: בכל פעם שהמחיר מגיע לעוד +100% ממחיר הכניסה, למכור 50% מהמניות שנותרו.
+5. לקחת רווח שוב ושוב: בכל פעם שהמחיר מגיע לעוד +125% ממחיר הכניסה, למכור 75% מהמניות שנותרו.
 6. אחרי יציאה מלאה, הבוט מחכה לאיתות כניסה חדש ומתחיל את המחזור מחדש.
 
 אין יותר סטופ קשיח נפרד של 5%.
@@ -221,19 +225,23 @@ Possible future improvements, only if needed:
 
 ### למה בחרנו באסטרטגיה הזו
 
-בדיקות היסטוריות על TQQQ מתאריך 2010-11-24 עד 2026-04-30 הראו:
+בדיקות היסטוריות הראו שלקיחת רווח עוזרת לאסטרטגיה יותר מאשר לא לקחת רווח בכלל.
+
+ב-2026-05-04 בדקנו מחדש את כללי לקיחת הרווח עם הטריילינג סטופ הנוכחי של 25%, מתאריך 2010-11-24 עד 2026-05-01. בדיקה מהירה קודמת תוקנה כי היא סימנה לא נכון את יעד הרווח הראשון. הבדיקה המתוקנת הראתה:
 
 | אסטרטגיה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית |
 | --- | ---: | ---: | ---: |
-| בלי לקיחת רווח | 73.1x | 32.1% | -49.5% |
-| כל +50%, למכור 25% | 103.1x | 35.0% | -49.5% |
-| כל +100%, למכור 50% | 108.1x | 35.5% | -49.5% |
+| בלי לקיחת רווח | 55.6x | 29.7% | -42.7% |
+| כל +100%, למכור 50% | 66.0x | 31.2% | -42.7% |
+| כל +50%, למכור 25% | 67.6x | 31.4% | -42.7% |
+| כל +125%, למכור 67% | 76.7x | 32.5% | -42.7% |
+| כל +125%, למכור 75% | 77.6x | 32.6% | -42.7% |
 
 לכן הכלל שנבחר הוא:
 
-> בכל +100% רווח ממחיר הכניסה, למכור 50% מהמניות שנותרו.
+> בכל +125% רווח ממחיר הכניסה, למכור 75% מהמניות שנותרו.
 
-נבדקו גם כללים עם לקיחת רווח קטנה ותכופה יותר. הם יכולים להרגיש יותר נוחים כי יש יותר פעולות, אבל היסטורית הם פגעו בקומפאונדינג או לא שיפרו מספיק את הסיכון.
+הכלל הזה פועל פחות פעמים מטרימים קטנים, אבל בבדיקה ההיסטורית הוא נתן את התוצאה הסופית הכי טובה עם אותה ירידה מקסימלית.
 
 זו עדיין אסטרטגיה תנודתית. גם עם הכללים המשופרים הייתה היסטורית ירידה של בערך 50%.
 
@@ -262,7 +270,7 @@ Possible future improvements, only if needed:
   "highest_high_since_entry": 65.84,
   "last_action": null,
   "last_action_at": null,
-  "next_profit_multiple": 2.0,
+  "next_profit_multiple": 2.25,
   "position_open": true,
   "shares": 40.4647,
   "ticker": "TQQQ"
@@ -275,7 +283,7 @@ Possible future improvements, only if needed:
 - מחיר ממוצע הוא `$61.54`.
 - כמות המניות היא `40.4647`.
 - השיא מאז הכניסה נשמר כרגע כ-`$65.84`, ולכן הטריילינג סטופ הפעיל הוא בערך `$49.38`.
-- יעד לקיחת הרווח הבא הוא `2.0x` ממחיר הכניסה, בערך `$123.08`.
+- יעד לקיחת הרווח הבא הוא `2.25x` ממחיר הכניסה, בערך `$138.47`.
 - אם תהיה יציאה מלאה, הבוט יעקוב אחרי המזומן ויגיד מתי להיכנס מחדש.
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.

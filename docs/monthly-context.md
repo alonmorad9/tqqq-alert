@@ -18,7 +18,7 @@ The current strategy is a high-risk/high-reward long-term TQQQ strategy:
 2. Sell all remaining shares if price crosses below the 200-day SMA.
 3. Sell all remaining shares if the true ratcheting 25% trailing stop is hit.
 4. Re-enter when price crosses back above the 200-day SMA.
-5. Take profit repeatedly: every time price reaches another +125% from the entry price, sell 75% of the remaining shares.
+5. Take profit repeatedly: every time price reaches another +125% from the entry price, sell 90% of the remaining shares.
 6. After a full exit, the bot waits for the next re-entry signal and starts the cycle again.
 
 There is no separate 5% hard stop anymore.
@@ -42,12 +42,13 @@ On 2026-05-04, profit-taking was retested with the current 25% ratcheting stop f
 | Every +50%, sell 25% | 67.6x | 31.4% | -42.7% |
 | Every +125%, sell 67% | 76.7x | 32.5% | -42.7% |
 | Every +125%, sell 75% | 77.6x | 32.6% | -42.7% |
+| Every +125%, sell 90% | 77.8x | 32.6% | -42.7% |
 
 The selected rule is therefore:
 
-> Every +125% gain from entry, sell 75% of the remaining shares.
+> Every +125% gain from entry, sell 90% of the remaining shares.
 
-This acts less often than smaller trims, but it tested best for final return while keeping the same max drawdown in the historical test.
+This acts less often than smaller trims, but it tested best as the practical final-return rule while keeping the same max drawdown in the historical test.
 
 This is still a volatile strategy. A roughly 50% drawdown happened historically even with the improved rules.
 
@@ -212,7 +213,7 @@ Possible future improvements, only if needed:
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
 3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 25% מופעל.
 4. להיכנס מחדש כשהמחיר חוצה בחזרה מעל SMA200.
-5. לקחת רווח שוב ושוב: בכל פעם שהמחיר מגיע לעוד +125% ממחיר הכניסה, למכור 75% מהמניות שנותרו.
+5. לקחת רווח שוב ושוב: בכל פעם שהמחיר מגיע לעוד +125% ממחיר הכניסה, למכור 90% מהמניות שנותרו.
 6. אחרי יציאה מלאה, הבוט מחכה לאיתות כניסה חדש ומתחיל את המחזור מחדש.
 
 אין יותר סטופ קשיח נפרד של 5%.
@@ -236,12 +237,13 @@ Possible future improvements, only if needed:
 | כל +50%, למכור 25% | 67.6x | 31.4% | -42.7% |
 | כל +125%, למכור 67% | 76.7x | 32.5% | -42.7% |
 | כל +125%, למכור 75% | 77.6x | 32.6% | -42.7% |
+| כל +125%, למכור 90% | 77.8x | 32.6% | -42.7% |
 
 לכן הכלל שנבחר הוא:
 
-> בכל +125% רווח ממחיר הכניסה, למכור 75% מהמניות שנותרו.
+> בכל +125% רווח ממחיר הכניסה, למכור 90% מהמניות שנותרו.
 
-הכלל הזה פועל פחות פעמים מטרימים קטנים, אבל בבדיקה ההיסטורית הוא נתן את התוצאה הסופית הכי טובה עם אותה ירידה מקסימלית.
+הכלל הזה פועל פחות פעמים מטרימים קטנים, אבל בבדיקה ההיסטורית הוא היה הכלל הפרקטי הטוב ביותר לתוצאה סופית, עם אותה ירידה מקסימלית.
 
 זו עדיין אסטרטגיה תנודתית. גם עם הכללים המשופרים הייתה היסטורית ירידה של בערך 50%.
 

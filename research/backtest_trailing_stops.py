@@ -11,7 +11,7 @@ import requests
 TICKER = "TQQQ"
 START_CASH = 1.0
 PROFIT_STEP = 1.25
-PROFIT_SELL_FRACTION = 0.75
+PROFIT_SELL_FRACTION = 0.90
 
 
 def fetch_yahoo_chart(ticker):

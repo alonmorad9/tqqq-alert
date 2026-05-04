@@ -144,6 +144,7 @@ Daily reports:
 
 - Send a full Telegram status message.
 - Include current price, SMA200, trailing stop, position mode, cash, shares, total value, P&L, and next profit target.
+- Include the price source. During market hours, the bot overlays Yahoo's latest 1-minute TQQQ bar on top of the daily history so it does not rely on yesterday's close. If the latest 1-minute price is stale by more than 30 minutes while the market is open, the run fails and sends a workflow-failure alert instead of trading on stale data.
 - Include an advisory risk context section inspired by the TradingAgents idea: trend, RSI momentum, ATR volatility, a 4x ATR reference stop, and risk level.
 - This risk context is not a trading trigger. Buy/sell/profit-taking instructions still come only from the deterministic strategy rules.
 
@@ -339,6 +340,7 @@ Worker:
 
 - שולחים הודעת סטטוס מלאה לטלגרם.
 - כוללים מחיר נוכחי, SMA200, טריילינג סטופ, מצב פוזיציה, מזומן, מניות, ערך כולל, רווח/הפסד, ויעד הרווח הבא.
+- כוללים את מקור המחיר. בזמן המסחר, הבוט משתמש בבר 1 דקה האחרון של Yahoo על גבי ההיסטוריה היומית, כדי לא להסתמך בטעות על מחיר הסגירה של אתמול. אם מחיר ה-1 דקה האחרון ישן ביותר מ-30 דקות בזמן שהשוק פתוח, ההרצה נכשלת ושולחת התראת כשל במקום לפעול על מחיר לא עדכני.
 - כוללים גם אזור הקשר סיכון בהשראת רעיון TradingAgents: מגמה, מומנטום RSI, תנודתיות ATR, סטופ ייחוס של 4x ATR, ורמת סיכון.
 - הקשר הסיכון הוא מידע בלבד ולא טריגר למסחר. הוראות קנייה/מכירה/לקיחת רווח עדיין מגיעות רק מכללי האסטרטגיה הדטרמיניסטיים.
 

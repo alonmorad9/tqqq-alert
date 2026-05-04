@@ -24,6 +24,7 @@ PROFIT_SELL_FRACTION = 0.90
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
 EARLY_CLOSE = time(13, 0)
+MAX_LIVE_PRICE_AGE = timedelta(minutes=30)
 
 
 def observed_fixed_holiday(year, month, day):
@@ -257,13 +258,64 @@ def fetch_market_data():
     import pandas as pd
     import yfinance as yf
 
-    ticker = yf.download(TICKER, period="2y", interval="1d", auto_adjust=True)
+    ticker = yf.download(TICKER, period="2y", interval="1d", auto_adjust=True, progress=False)
 
     if isinstance(ticker.columns, pd.MultiIndex):
         ticker.columns = [c[0] for c in ticker.columns]
 
     if ticker.empty:
         raise RuntimeError(f"No market data returned for {TICKER}")
+
+    intraday = yf.download(TICKER, period="5d", interval="1m", auto_adjust=True, progress=False)
+
+    if isinstance(intraday.columns, pd.MultiIndex):
+        intraday.columns = [c[0] for c in intraday.columns]
+
+    live_source = "daily"
+    live_age = None
+    market_open, _ = is_market_open(datetime.now(UTC))
+    if not intraday.empty:
+        intraday = intraday.dropna(subset=["Close"])
+
+    if not intraday.empty:
+        latest_bar_time = intraday.index[-1]
+        if latest_bar_time.tzinfo is None:
+            latest_bar_utc = latest_bar_time.tz_localize(MARKET_TZ).tz_convert(UTC)
+        else:
+            latest_bar_utc = latest_bar_time.tz_convert(UTC)
+
+        now_utc = datetime.now(UTC)
+        live_age = now_utc - latest_bar_utc.to_pydatetime()
+        latest_day = latest_bar_utc.astimezone(MARKET_TZ).date()
+        day_bars = intraday[intraday.index.map(date_only) == latest_day]
+        latest_close = float(day_bars["Close"].iloc[-1])
+        latest_high = float(day_bars["High"].max())
+        latest_low = float(day_bars["Low"].min())
+        latest_open = float(day_bars["Open"].iloc[0])
+        latest_volume = float(day_bars["Volume"].sum()) if "Volume" in day_bars else 0.0
+
+        daily_dates = ticker.index.map(date_only)
+        if latest_day in set(daily_dates):
+            row_index = ticker.index[daily_dates == latest_day][-1]
+            ticker.loc[row_index, "Open"] = latest_open
+            ticker.loc[row_index, "High"] = max(float(ticker.loc[row_index, "High"]), latest_high)
+            ticker.loc[row_index, "Low"] = min(float(ticker.loc[row_index, "Low"]), latest_low)
+            ticker.loc[row_index, "Close"] = latest_close
+            ticker.loc[row_index, "Volume"] = latest_volume
+        else:
+            ticker.loc[pd.Timestamp(latest_day)] = {
+                "Open": latest_open,
+                "High": latest_high,
+                "Low": latest_low,
+                "Close": latest_close,
+                "Volume": latest_volume,
+            }
+            ticker = ticker.sort_index()
+        live_source = f"1m bar {latest_bar_utc.isoformat()}"
+
+    if market_open and (intraday.empty or live_age is None or live_age > MAX_LIVE_PRICE_AGE):
+        age_text = "unavailable" if live_age is None else str(live_age)
+        raise RuntimeError(f"Live Yahoo price is stale during market hours: {age_text}")
 
     ticker["SMA200"] = ticker["Close"].rolling(window=200).mean()
     ticker["SMA20"] = ticker["Close"].rolling(window=20).mean()
@@ -278,6 +330,7 @@ def fetch_market_data():
         (ticker["Low"] - prev_close).abs(),
     ], axis=1).max(axis=1)
     ticker["ATR14"] = true_range.rolling(window=14).mean()
+    ticker.attrs["price_source"] = live_source
     return ticker
 
 
@@ -294,6 +347,10 @@ def money(value):
 
 
 def date_only(value):
+    if hasattr(value, "tzinfo") and value.tzinfo is not None:
+        if hasattr(value, "tz_convert"):
+            return value.tz_convert(MARKET_TZ).date()
+        return value.astimezone(MARKET_TZ).date()
     if hasattr(value, "date"):
         return value.date()
     return datetime.fromisoformat(str(value)).date()
@@ -548,6 +605,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     next_profit_target = avg_cost * next_profit_multiple if position_open and avg_cost else None
     position_status = "In position" if position_open else "Waiting for re-entry"
     risk_context_lines = build_risk_context(ticker, current_price, sma200, trailing_stop)
+    price_source = ticker.attrs.get("price_source", "daily")
 
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
@@ -570,6 +628,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "─" * 30,
             f"Mode:          {position_status}",
             f"💰 Price:        ${current_price:.2f}",
+            f"🕒 Price Source: {price_source}",
             f"📈 SMA200:       ${sma200:.2f}  ({gap_to_sma:+.1f}% away)",
         ]
         if trailing_stop is not None:
@@ -614,6 +673,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             *instruction_lines,
             "─" * 30,
             f"💰 Price:      ${current_price:.2f}",
+            f"🕒 Source:     {price_source}",
             f"📈 SMA200:     ${sma200:.2f}",
         ]
         if trailing_stop is not None:

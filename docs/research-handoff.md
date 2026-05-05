@@ -39,6 +39,16 @@ Swing profit cycle:
 - After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
 - After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
+Manual safety mode:
+
+- Optional GitHub Actions manual mode: `manual_sold`.
+- Requires `manual_price`, the actual price where the human sold.
+- This mode marks the position closed and records `manual_exit_price`.
+- It intentionally does not allow immediate re-buy just because TQQQ is above SMA200.
+- Re-buy after manual safety mode only when:
+  - current price is at least 7.5% below the manual sell price and still above SMA200, or
+  - price went below SMA200 after the manual exit and later crosses back above SMA200.
+
 Current tracked real position state:
 
 ```json
@@ -48,6 +58,8 @@ Current tracked real position state:
   "entry_date": "2026-04-29",
   "highest_high_since_entry": 65.84,
   "last_profit_sell_price": null,
+  "manual_exit_mode": false,
+  "manual_exit_price": null,
   "position_open": true,
   "profit_exit_date": null,
   "shares": 40.4647,

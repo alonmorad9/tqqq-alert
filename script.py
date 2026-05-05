@@ -233,6 +233,10 @@ def default_state():
         "waiting_for_pullback": False,
         "last_profit_sell_price": None,
         "profit_exit_date": None,
+        "manual_exit_mode": False,
+        "manual_exit_price": None,
+        "manual_exit_date": None,
+        "manual_exit_saw_below_sma": False,
         "last_action": None,
         "last_action_at": None,
         "last_report_key": None,
@@ -393,6 +397,15 @@ def trading_days_since(date_text, ticker):
     return int(sum(1 for value in ticker.index.map(date_only) if value > start_day))
 
 
+def clear_manual_exit_fields():
+    return {
+        "manual_exit_mode": False,
+        "manual_exit_price": None,
+        "manual_exit_date": None,
+        "manual_exit_saw_below_sma": False,
+    }
+
+
 def build_risk_context(ticker, current_price, sma200, trailing_stop):
     sma20 = float(ticker["SMA20"].iloc[-1])
     sma50 = float(ticker["SMA50"].iloc[-1])
@@ -483,6 +496,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
     profit_exit_date = state.get("profit_exit_date")
     pullback_wait_days = trading_days_since(profit_exit_date, ticker) if waiting_for_pullback else 0
+    manual_exit_mode = bool(state.get("manual_exit_mode", False))
+    manual_exit_price = state.get("manual_exit_price")
+    manual_exit_price = float(manual_exit_price) if manual_exit_price is not None else None
+    manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
     state_changed = False
     state_dirty = False
     highest_high_since_entry = initialize_highest_high_since_entry(state, ticker)
@@ -511,6 +528,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         and current_price >= avg_cost * (1 + SWING_PROFIT_TARGET_PCT)
     )
     above_sma = current_price > sma200
+    if manual_exit_mode and current_price < sma200 and not manual_exit_saw_below_sma:
+        manual_exit_saw_below_sma = True
+        state["manual_exit_saw_below_sma"] = True
+        state_dirty = True
+
     hit_rebuy_pullback = (
         waiting_for_pullback
         and last_profit_sell_price is not None
@@ -518,6 +540,14 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     )
     hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
     hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma
+    hit_manual_rebuy_pullback = (
+        manual_exit_mode
+        and manual_exit_price is not None
+        and current_price <= manual_exit_price * (1 - SWING_REBUY_DROP_PCT)
+    )
+    hit_manual_rebuy_reset = manual_exit_mode and manual_exit_saw_below_sma and crossed_above_sma
+    hit_manual_rebuy_signal = (hit_manual_rebuy_pullback or hit_manual_rebuy_reset) and above_sma
+    hit_fresh_buy_signal = crossed_above_sma and not waiting_for_pullback and not manual_exit_mode
 
     action = None
     instruction_lines = []
@@ -536,6 +566,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "waiting_for_pullback": False,
             "last_profit_sell_price": None,
             "profit_exit_date": None,
+            **clear_manual_exit_fields(),
             "last_action": "sell_all_trailing_stop",
         })
         state_changed = True
@@ -555,6 +586,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "waiting_for_pullback": False,
             "last_profit_sell_price": None,
             "profit_exit_date": None,
+            **clear_manual_exit_fields(),
             "last_action": "sell_all_sma200",
         })
         state_changed = True
@@ -575,6 +607,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "waiting_for_pullback": True,
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
+            **clear_manual_exit_fields(),
             "last_action": f"swing_profit_exit_{target_pct}",
         })
         state_changed = True
@@ -582,7 +615,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
         rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
         instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
-    elif not position_open and (crossed_above_sma or hit_rebuy_signal):
+    elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_manual_rebuy_signal):
         buy_cash = cash
         buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
         if buy_shares > 0:
@@ -594,6 +627,12 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             elif hit_rebuy_timeout:
                 buy_reason = "buy_swing_timeout"
                 action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
+            elif hit_manual_rebuy_pullback:
+                buy_reason = "buy_manual_pullback"
+                action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
+            elif hit_manual_rebuy_reset:
+                buy_reason = "buy_manual_sma_reset"
+                action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
             shares = buy_shares
             cash = 0.0
             state.update({
@@ -606,6 +645,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 "waiting_for_pullback": False,
                 "last_profit_sell_price": None,
                 "profit_exit_date": None,
+                **clear_manual_exit_fields(),
                 "last_action": buy_reason,
             })
             state_changed = True
@@ -617,11 +657,17 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
             elif hit_rebuy_timeout:
                 action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
+            elif hit_manual_rebuy_pullback:
+                action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
+            elif hit_manual_rebuy_reset:
+                action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
             instruction_lines.append("No tracked cash is available; update position_state.json after buying.")
     elif position_open and trailing_stop is not None and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
     elif waiting_for_pullback:
         action = "⏳ WAIT — Waiting for pullback or timeout re-entry"
+    elif manual_exit_mode:
+        action = "🧯 WAIT — Manual safety mode"
     elif current_price < sma200:
         action = "⏸️ WAIT — Price below SMA200" if not position_open else "⚠️ CAUTION — Price below SMA200"
     else:
@@ -630,8 +676,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     if state_changed:
         state_dirty = True
 
-    is_signal = state_changed or (not position_open and crossed_above_sma)
+    is_signal = state_changed or (not position_open and hit_fresh_buy_signal)
     is_signal = is_signal or (not position_open and hit_rebuy_signal)
+    is_signal = is_signal or (not position_open and hit_manual_rebuy_signal)
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
@@ -642,6 +689,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
     profit_exit_date = state.get("profit_exit_date")
     pullback_wait_days = trading_days_since(profit_exit_date, ticker) if waiting_for_pullback else 0
+    manual_exit_mode = bool(state.get("manual_exit_mode", False))
+    manual_exit_price = state.get("manual_exit_price")
+    manual_exit_price = float(manual_exit_price) if manual_exit_price is not None else None
+    manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
     highest_high_since_entry = state.get("highest_high_since_entry")
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     position_value = shares * current_price
@@ -656,7 +707,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     gap_to_sma = round(((sma200 - current_price) / current_price) * 100, 2)
     next_profit_target = avg_cost * (1 + SWING_PROFIT_TARGET_PCT) if position_open and avg_cost else None
     rebuy_target = last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT) if waiting_for_pullback and last_profit_sell_price else None
-    position_status = "In position" if position_open else "Waiting for swing re-entry" if waiting_for_pullback else "Waiting for re-entry"
+    manual_rebuy_target = manual_exit_price * (1 - SWING_REBUY_DROP_PCT) if manual_exit_mode and manual_exit_price else None
+    if position_open:
+        position_status = "In position"
+    elif manual_exit_mode:
+        position_status = "Manual safety mode"
+    elif waiting_for_pullback:
+        position_status = "Waiting for swing re-entry"
+    else:
+        position_status = "Waiting for re-entry"
     risk_context_lines = build_risk_context(ticker, current_price, sma200, trailing_stop)
     price_source = ticker.attrs.get("price_source", "daily")
 
@@ -695,6 +754,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         if rebuy_target:
             lines.append(f"🔁 Re-buy:       ${rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from profit exit)")
             lines.append(f"⏳ Wait Days:    {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS} trading days")
+        if manual_rebuy_target:
+            lines.append(f"🧯 Manual Re-buy: ${manual_rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from manual exit)")
+            reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
+            lines.append(f"🔄 SMA Reset:    {reset_status}")
         lines.extend([
             "─" * 30,
             *risk_context_lines,
@@ -739,6 +802,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         if rebuy_target:
             lines.append(f"🔁 Re-buy:     ${rebuy_target:.2f}")
             lines.append(f"⏳ Wait Days:  {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
+        if manual_rebuy_target:
+            lines.append(f"🧯 Manual Re-buy: ${manual_rebuy_target:.2f}")
+            reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
+            lines.append(f"🔄 SMA Reset: {reset_status}")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",
@@ -761,6 +828,60 @@ def send_telegram(message):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     response = requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=30)
     response.raise_for_status()
+
+
+def parse_manual_price():
+    raw_price = os.getenv("MANUAL_PRICE", "").strip()
+    if not raw_price:
+        raise RuntimeError("manual_sold mode requires MANUAL_PRICE / manual_price input")
+
+    price = float(raw_price)
+    if price <= 0:
+        raise RuntimeError("manual_price must be greater than 0")
+
+    return price
+
+
+def mark_manual_sold():
+    manual_price = parse_manual_price()
+    state = load_state()
+    shares = float(state.get("shares", 0.0))
+    cash = float(state.get("cash", 0.0))
+    sale_value = shares * manual_price
+    cash += sale_value
+    rebuy_target = manual_price * (1 - SWING_REBUY_DROP_PCT)
+
+    state.update({
+        "position_open": False,
+        "shares": 0.0,
+        "cash": round(cash, 2),
+        "avg_cost": None,
+        "entry_date": None,
+        "highest_high_since_entry": None,
+        "waiting_for_pullback": False,
+        "last_profit_sell_price": None,
+        "profit_exit_date": None,
+        "manual_exit_mode": True,
+        "manual_exit_price": round(manual_price, 4),
+        "manual_exit_date": datetime.now(UTC).date().isoformat(),
+        "manual_exit_saw_below_sma": False,
+        "last_action": "manual_sold",
+    })
+    save_state(state)
+
+    lines = [
+        "🧯 Manual Safety Mode Activated",
+        "─" * 30,
+        f"Manual sell price: ${manual_price:.2f}",
+        f"Tracked shares sold: {shares:.4f}",
+        f"Tracked cash: ${cash:.2f}",
+        "─" * 30,
+        f"Re-buy pullback: ${rebuy_target:.2f}",
+        "Or: wait for price to go below SMA200, then cross back above SMA200.",
+        "The bot will not immediately re-buy just because TQQQ is currently above SMA200.",
+    ]
+    send_telegram("\n".join(lines))
+    print(f"[MANUAL SOLD] Safety mode activated | Price: {manual_price:.2f} | Cash: {cash:.2f}")
 
 
 def run_auto_mode():
@@ -815,5 +936,7 @@ if __name__ == "__main__":
         run_auto_mode()
     elif mode == "daily":
         check_strategy(daily_report=True)
+    elif mode == "manual_sold":
+        mark_manual_sold()
     else:
         check_strategy(daily_report=False)

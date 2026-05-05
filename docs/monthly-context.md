@@ -25,6 +25,11 @@ The current strategy is a high-risk/high-reward TQQQ swing strategy:
 
 There is no separate 5% hard stop anymore.
 
+Manual safety mode is optional and does not run unless triggered manually from GitHub Actions. It is used only if the human manually/panic sells outside the normal strategy. In that case, the bot records the manual sell price and will not immediately re-buy just because TQQQ is still above SMA200. It waits for either:
+
+- A 7.5% pullback from the manual sell price while TQQQ is still above SMA200.
+- Or a full SMA200 reset: price goes below SMA200 first, then later crosses back above SMA200.
+
 The trailing stop is now:
 
 > Highest high since entry x 0.75
@@ -81,6 +86,10 @@ Current starting state as of 2026-04-30:
   "highest_high_since_entry": 65.84,
   "last_action": null,
   "last_action_at": null,
+  "manual_exit_date": null,
+  "manual_exit_mode": false,
+  "manual_exit_price": null,
+  "manual_exit_saw_below_sma": false,
   "position_open": true,
   "profit_exit_date": null,
   "shares": 40.4647,
@@ -99,6 +108,7 @@ Meaning:
 - The next profit-taking target is +20% from the current entry, around `$73.85`.
 - If a +20% profit exit happens, the bot will track cash, the sell price, and the re-buy rule.
 - If a stop or SMA200 exit happens, the bot waits for the next SMA200 cross-up instead of using the pullback rule.
+- If a manual/panic sell is recorded through GitHub Actions, the bot enters manual safety mode and waits for a 7.5% cheaper re-entry or a fresh SMA200 reset.
 
 If real trades are made manually, `position_state.json` must match reality.
 
@@ -130,6 +140,13 @@ The Cloudflare Worker dispatches the GitHub workflow with:
 - `schedule=<the Cloudflare cron expression>`
 
 The Python script then decides whether the run is actually valid for NASDAQ trading hours.
+
+Manual safety mode is triggered only through GitHub Actions `workflow_dispatch`:
+
+- `mode=manual_sold`
+- `manual_price=<actual sell price>`
+
+This is not used by the Cloudflare scheduler.
 
 Expected behavior:
 
@@ -189,7 +206,8 @@ Failure alerts:
 4. Confirm `position_state.json` still matches the real brokerage position.
 5. Review whether any buy, sell, or profit-taking alerts were sent.
 6. Compare bot-reported price, SMA200, trailing stop, and next profit target against current market data.
-7. Decide whether to keep the current strategy unchanged for another month.
+7. If a manual/panic sell happened, confirm manual safety mode has the correct manual sell price and re-buy target.
+8. Decide whether to keep the current strategy unchanged for another month.
 
 ### Do Not Change Lightly
 
@@ -227,6 +245,11 @@ Possible future improvements, only if needed:
 8. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
 
 אין יותר סטופ קשיח נפרד של 5%.
+
+מצב בטיחות ידני הוא אופציונלי ולא פועל אלא אם מפעילים אותו ידנית דרך GitHub Actions. משתמשים בו רק אם האדם מוכר ידנית/מפאניקה מחוץ לאסטרטגיה הרגילה. במקרה כזה, הבוט שומר את מחיר המכירה הידני ולא יקנה מיד בחזרה רק כי TQQQ עדיין מעל SMA200. הוא מחכה לאחד משני דברים:
+
+- ירידה של 7.5% ממחיר המכירה הידני, כל עוד TQQQ עדיין מעל SMA200.
+- או איפוס SMA200 מלא: המחיר יורד קודם מתחת ל-SMA200, ואז בהמשך חוצה בחזרה מעל SMA200.
 
 הטריילינג סטופ עכשיו הוא:
 
@@ -284,6 +307,10 @@ Possible future improvements, only if needed:
   "highest_high_since_entry": 65.84,
   "last_action": null,
   "last_action_at": null,
+  "manual_exit_date": null,
+  "manual_exit_mode": false,
+  "manual_exit_price": null,
+  "manual_exit_saw_below_sma": false,
   "position_open": true,
   "profit_exit_date": null,
   "shares": 40.4647,
@@ -302,6 +329,7 @@ Possible future improvements, only if needed:
 - יעד לקיחת הרווח הבא הוא +20% ממחיר הכניסה הנוכחי, בערך `$73.85`.
 - אם תהיה יציאת רווח של +20%, הבוט יעקוב אחרי המזומן, מחיר המכירה, וכלל הכניסה מחדש.
 - אם תהיה יציאה בגלל סטופ או SMA200, הבוט יחכה לחצייה חדשה מעל SMA200 במקום להשתמש בכלל ה-pullback.
+- אם נרשמת מכירה ידנית/פאניקה דרך GitHub Actions, הבוט נכנס למצב בטיחות ידני ומחכה לכניסה זולה יותר ב-7.5% או לאיפוס SMA200 חדש.
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.
 
@@ -333,6 +361,13 @@ Worker:
 - `schedule=<the Cloudflare cron expression>`
 
 אחר כך הסקריפט בפייתון מחליט אם ההרצה באמת רלוונטית לשעות המסחר של נאסד"ק.
+
+מצב בטיחות ידני מופעל רק דרך `workflow_dispatch` ב-GitHub Actions:
+
+- `mode=manual_sold`
+- `manual_price=<actual sell price>`
+
+ה-Cloudflare scheduler לא משתמש בזה.
 
 התנהגות צפויה:
 
@@ -389,7 +424,8 @@ Worker:
 4. לוודא ש-`position_state.json` עדיין תואם לפוזיציה האמיתית בחשבון.
 5. לבדוק אם נשלחו איתותי קנייה, מכירה, או לקיחת רווח.
 6. להשוות את המחיר, SMA200, הטריילינג סטופ ויעד הרווח הבא לנתוני שוק עדכניים.
-7. להחליט האם להשאיר את האסטרטגיה ללא שינוי לחודש נוסף.
+7. אם הייתה מכירה ידנית/פאניקה, לוודא שמצב הבטיחות הידני שמר את מחיר המכירה ואת יעד הכניסה מחדש הנכון.
+8. להחליט האם להשאיר את האסטרטגיה ללא שינוי לחודש נוסף.
 
 ### לא לשנות בקלות
 

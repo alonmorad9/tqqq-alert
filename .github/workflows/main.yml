@@ -15,6 +15,11 @@ on:
           - check
           - daily
           - auto
+          - manual_sold
+      manual_price:
+        description: 'Manual sell price, required only for manual_sold'
+        required: false
+        default: ''
       schedule:
         description: 'Cron expression from external scheduler'
         required: false
@@ -43,6 +48,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule || inputs.schedule }}
           RUN_MODE: ${{ inputs.mode || 'auto' }}
+          MANUAL_PRICE: ${{ inputs.manual_price }}
         run: python script.py "${RUN_MODE:-auto}"
       - name: Save position state
         run: |

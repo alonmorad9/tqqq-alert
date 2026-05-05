@@ -2,14 +2,14 @@
   "avg_cost": 61.54,
   "cash": 0.0,
   "entry_date": "2026-04-29",
-  "highest_high_since_entry": 66.61,
+  "highest_high_since_entry": 66.89,
   "last_action": null,
-  "last_action_at": "2026-05-05T13:31:24.663210+00:00",
+  "last_action_at": "2026-05-05T13:41:20.037155+00:00",
+  "last_profit_sell_price": null,
   "last_report_key": "2026-05-04:close",
   "position_open": true,
   "profit_exit_date": null,
   "shares": 40.4647,
   "ticker": "TQQQ",
-  "waiting_for_pullback": false,
-  "last_profit_sell_price": null
+  "waiting_for_pullback": false
 }

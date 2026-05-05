@@ -76,23 +76,23 @@ The chosen stop is therefore the 25% true ratchet. ATR-based stops were tested, 
 
 The live state is stored in `position_state.json`.
 
-Current starting state as of 2026-04-30:
+Current live state as of 2026-05-05 after a manual sell:
 
 ```json
 {
-  "avg_cost": 61.54,
-  "cash": 0.0,
-  "entry_date": "2026-04-29",
-  "highest_high_since_entry": 65.84,
-  "last_action": null,
-  "last_action_at": null,
-  "manual_exit_date": null,
-  "manual_exit_mode": false,
-  "manual_exit_price": null,
+  "avg_cost": null,
+  "cash": 2726.11,
+  "entry_date": null,
+  "highest_high_since_entry": null,
+  "last_action": "manual_sold",
+  "last_action_at": "2026-05-05T15:28:24+00:00",
+  "manual_exit_date": "2026-05-05",
+  "manual_exit_mode": true,
+  "manual_exit_price": 67.37,
   "manual_exit_saw_below_sma": false,
-  "position_open": true,
+  "position_open": false,
   "profit_exit_date": null,
-  "shares": 40.4647,
+  "shares": 0.0,
   "ticker": "TQQQ",
   "waiting_for_pullback": false,
   "last_profit_sell_price": null
@@ -101,14 +101,13 @@ Current starting state as of 2026-04-30:
 
 Meaning:
 
-- The bot assumes there is an open TQQQ position.
-- Average cost is `$61.54`.
-- Shares are `40.4647`.
-- Highest high since entry is currently tracked as `$65.84`, making the active 25% trailing stop about `$49.38`.
-- The next profit-taking target is +20% from the current entry, around `$73.85`.
-- If a +20% profit exit happens, the bot will track cash, the sell price, and the re-buy rule.
-- If a stop or SMA200 exit happens, the bot waits for the next SMA200 cross-up instead of using the pullback rule.
-- If a manual/panic sell is recorded through GitHub Actions, the bot enters manual safety mode and waits for a 7.5% cheaper re-entry or a fresh SMA200 reset.
+- The bot assumes there is no open TQQQ position.
+- The position was manually sold at `$67.37`.
+- Tracked cash is `$2726.11`.
+- Manual safety mode is active.
+- Manual re-buy pullback level is `$62.32` (`67.37 x 0.925`).
+- The bot should not immediately re-buy just because TQQQ is above SMA200.
+- It should re-buy only after the 7.5% manual pullback level is hit while above SMA200, or after price goes below SMA200 and later crosses back above it.
 
 If real trades are made manually, `position_state.json` must match reality.
 
@@ -297,23 +296,23 @@ Possible future improvements, only if needed:
 
 המצב החי נשמר בקובץ `position_state.json`.
 
-מצב התחלתי נכון ל-2026-04-30:
+מצב חי נכון ל-2026-05-05 אחרי מכירה ידנית:
 
 ```json
 {
-  "avg_cost": 61.54,
-  "cash": 0.0,
-  "entry_date": "2026-04-29",
-  "highest_high_since_entry": 65.84,
-  "last_action": null,
-  "last_action_at": null,
-  "manual_exit_date": null,
-  "manual_exit_mode": false,
-  "manual_exit_price": null,
+  "avg_cost": null,
+  "cash": 2726.11,
+  "entry_date": null,
+  "highest_high_since_entry": null,
+  "last_action": "manual_sold",
+  "last_action_at": "2026-05-05T15:28:24+00:00",
+  "manual_exit_date": "2026-05-05",
+  "manual_exit_mode": true,
+  "manual_exit_price": 67.37,
   "manual_exit_saw_below_sma": false,
-  "position_open": true,
+  "position_open": false,
   "profit_exit_date": null,
-  "shares": 40.4647,
+  "shares": 0.0,
   "ticker": "TQQQ",
   "waiting_for_pullback": false,
   "last_profit_sell_price": null
@@ -322,14 +321,13 @@ Possible future improvements, only if needed:
 
 המשמעות:
 
-- הבוט מניח שיש פוזיציה פתוחה ב-TQQQ.
-- מחיר ממוצע הוא `$61.54`.
-- כמות המניות היא `40.4647`.
-- השיא מאז הכניסה נשמר כרגע כ-`$65.84`, ולכן הטריילינג סטופ הפעיל הוא בערך `$49.38`.
-- יעד לקיחת הרווח הבא הוא +20% ממחיר הכניסה הנוכחי, בערך `$73.85`.
-- אם תהיה יציאת רווח של +20%, הבוט יעקוב אחרי המזומן, מחיר המכירה, וכלל הכניסה מחדש.
-- אם תהיה יציאה בגלל סטופ או SMA200, הבוט יחכה לחצייה חדשה מעל SMA200 במקום להשתמש בכלל ה-pullback.
-- אם נרשמת מכירה ידנית/פאניקה דרך GitHub Actions, הבוט נכנס למצב בטיחות ידני ומחכה לכניסה זולה יותר ב-7.5% או לאיפוס SMA200 חדש.
+- הבוט מניח שאין פוזיציה פתוחה ב-TQQQ.
+- הפוזיציה נמכרה ידנית במחיר `$67.37`.
+- המזומן במעקב הוא `$2726.11`.
+- מצב בטיחות ידני פעיל.
+- יעד הכניסה הידני מחדש הוא `$62.32` (`67.37 x 0.925`).
+- הבוט לא אמור לקנות מיד בחזרה רק כי TQQQ מעל SMA200.
+- הוא אמור לקנות מחדש רק אם מחיר ה-pullback הידני של 7.5% מופעל בזמן שהמחיר מעל SMA200, או אחרי שהמחיר ירד מתחת SMA200 ובהמשך חצה בחזרה מעליו.
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.
 

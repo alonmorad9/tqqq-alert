@@ -53,16 +53,16 @@ Current tracked real position state:
 
 ```json
 {
-  "avg_cost": 61.54,
-  "cash": 0.0,
-  "entry_date": "2026-04-29",
-  "highest_high_since_entry": 65.84,
+  "avg_cost": null,
+  "cash": 2726.11,
+  "entry_date": null,
+  "highest_high_since_entry": null,
   "last_profit_sell_price": null,
-  "manual_exit_mode": false,
-  "manual_exit_price": null,
-  "position_open": true,
+  "manual_exit_mode": true,
+  "manual_exit_price": 67.37,
+  "position_open": false,
   "profit_exit_date": null,
-  "shares": 40.4647,
+  "shares": 0.0,
   "ticker": "TQQQ",
   "waiting_for_pullback": false
 }
@@ -70,8 +70,9 @@ Current tracked real position state:
 
 Current implied levels:
 
-- Trailing stop: about `$49.38`
-- Next profit target: about `$73.85`
+- Manual re-buy pullback: about `$62.32`
+- No active trailing stop while out of position.
+- No active profit target while out of position.
 
 ## Scheduling And Data
 

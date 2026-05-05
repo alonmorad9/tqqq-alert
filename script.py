@@ -17,9 +17,9 @@ TICKER = "TQQQ"
 STATE_FILE = Path("position_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
 TRAILING_STOP_PCT = 0.25
-INITIAL_PROFIT_MULTIPLE = 2.25
-PROFIT_STEP_PCT = 1.25
-PROFIT_SELL_FRACTION = 0.90
+SWING_PROFIT_TARGET_PCT = 0.20
+SWING_REBUY_DROP_PCT = 0.075
+SWING_REBUY_TIMEOUT_DAYS = 20
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -230,7 +230,9 @@ def default_state():
         "shares": SHARES,
         "cash": 0.0,
         "highest_high_since_entry": None,
-        "next_profit_multiple": INITIAL_PROFIT_MULTIPLE,
+        "waiting_for_pullback": False,
+        "last_profit_sell_price": None,
+        "profit_exit_date": None,
         "last_action": None,
         "last_action_at": None,
         "last_report_key": None,
@@ -244,6 +246,7 @@ def load_state():
     with STATE_FILE.open() as f:
         state = json.load(f)
 
+    state.pop("next_profit_multiple", None)
     merged = default_state()
     merged.update(state)
     return merged
@@ -382,6 +385,14 @@ def calculate_trailing_stop(highest_high):
     return round(float(highest_high) * (1 - TRAILING_STOP_PCT), 2)
 
 
+def trading_days_since(date_text, ticker):
+    if not date_text:
+        return 0
+
+    start_day = datetime.fromisoformat(date_text).date()
+    return int(sum(1 for value in ticker.index.map(date_only) if value > start_day))
+
+
 def build_risk_context(ticker, current_price, sma200, trailing_stop):
     sma20 = float(ticker["SMA20"].iloc[-1])
     sma50 = float(ticker["SMA50"].iloc[-1])
@@ -467,7 +478,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
-    next_profit_multiple = float(state.get("next_profit_multiple", INITIAL_PROFIT_MULTIPLE))
+    waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
+    last_profit_sell_price = state.get("last_profit_sell_price")
+    last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
+    profit_exit_date = state.get("profit_exit_date")
+    pullback_wait_days = trading_days_since(profit_exit_date, ticker) if waiting_for_pullback else 0
     state_changed = False
     state_dirty = False
     highest_high_since_entry = initialize_highest_high_since_entry(state, ticker)
@@ -493,8 +508,16 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         position_open
         and shares > 0
         and avg_cost > 0
-        and current_price >= avg_cost * next_profit_multiple
+        and current_price >= avg_cost * (1 + SWING_PROFIT_TARGET_PCT)
     )
+    above_sma = current_price > sma200
+    hit_rebuy_pullback = (
+        waiting_for_pullback
+        and last_profit_sell_price is not None
+        and current_price <= last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT)
+    )
+    hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
+    hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma
 
     action = None
     instruction_lines = []
@@ -510,7 +533,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "avg_cost": None,
             "entry_date": None,
             "highest_high_since_entry": None,
-            "next_profit_multiple": INITIAL_PROFIT_MULTIPLE,
+            "waiting_for_pullback": False,
+            "last_profit_sell_price": None,
+            "profit_exit_date": None,
             "last_action": "sell_all_trailing_stop",
         })
         state_changed = True
@@ -527,33 +552,48 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "avg_cost": None,
             "entry_date": None,
             "highest_high_since_entry": None,
-            "next_profit_multiple": INITIAL_PROFIT_MULTIPLE,
+            "waiting_for_pullback": False,
+            "last_profit_sell_price": None,
+            "profit_exit_date": None,
             "last_action": "sell_all_sma200",
         })
         state_changed = True
         action = "🚨 SELL NOW — CROSSED BELOW SMA200"
         instruction_lines.append(f"Sell all remaining shares: {sell_shares:.4f}")
     elif position_open and hit_profit_target:
-        sell_shares = shares * PROFIT_SELL_FRACTION
+        sell_shares = shares
         cash += sell_shares * current_price
-        shares -= sell_shares
-        target_pct = int(round((next_profit_multiple - 1) * 100))
+        shares = 0.0
+        target_pct = int(round(SWING_PROFIT_TARGET_PCT * 100))
         state.update({
-            "position_open": True,
-            "shares": round(shares, 6),
+            "position_open": False,
+            "shares": shares,
             "cash": round(cash, 2),
-            "next_profit_multiple": round(next_profit_multiple + PROFIT_STEP_PCT, 4),
-            "last_action": f"profit_trim_{target_pct}",
+            "avg_cost": None,
+            "entry_date": None,
+            "highest_high_since_entry": None,
+            "waiting_for_pullback": True,
+            "last_profit_sell_price": round(current_price, 4),
+            "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
+            "last_action": f"swing_profit_exit_{target_pct}",
         })
         state_changed = True
-        action = f"💰 TAKE PROFIT — +{target_pct}% TARGET HIT"
-        sell_pct = int(round(PROFIT_SELL_FRACTION * 100))
-        instruction_lines.append(f"Sell {sell_pct}% of remaining shares: {sell_shares:.4f}")
-        instruction_lines.append(f"Keep riding with: {shares:.4f} shares")
-    elif not position_open and crossed_above_sma:
+        action = f"💰 SELL ALL — +{target_pct}% SWING TARGET HIT"
+        instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
+        rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
+        instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
+    elif not position_open and (crossed_above_sma or hit_rebuy_signal):
         buy_cash = cash
         buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
         if buy_shares > 0:
+            buy_reason = "buy_sma200"
+            action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
+            if hit_rebuy_pullback:
+                buy_reason = "buy_swing_pullback"
+                action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
+            elif hit_rebuy_timeout:
+                buy_reason = "buy_swing_timeout"
+                action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
             shares = buy_shares
             cash = 0.0
             state.update({
@@ -563,18 +603,25 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 "shares": round(shares, 6),
                 "cash": cash,
                 "highest_high_since_entry": round(current_high, 4),
-                "next_profit_multiple": INITIAL_PROFIT_MULTIPLE,
-                "last_action": "buy_sma200",
+                "waiting_for_pullback": False,
+                "last_profit_sell_price": None,
+                "profit_exit_date": None,
+                "last_action": buy_reason,
             })
             state_changed = True
-            action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
             instruction_lines.append(f"Buy with available cash: {money(buy_cash)}")
             instruction_lines.append(f"Estimated shares: {buy_shares:.4f}")
         else:
             action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
+            if hit_rebuy_pullback:
+                action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
+            elif hit_rebuy_timeout:
+                action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
             instruction_lines.append("No tracked cash is available; update position_state.json after buying.")
     elif position_open and trailing_stop is not None and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
+    elif waiting_for_pullback:
+        action = "⏳ WAIT — Waiting for pullback or timeout re-entry"
     elif current_price < sma200:
         action = "⏸️ WAIT — Price below SMA200" if not position_open else "⚠️ CAUTION — Price below SMA200"
     else:
@@ -584,12 +631,17 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         state_dirty = True
 
     is_signal = state_changed or (not position_open and crossed_above_sma)
+    is_signal = is_signal or (not position_open and hit_rebuy_signal)
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
-    next_profit_multiple = float(state.get("next_profit_multiple", INITIAL_PROFIT_MULTIPLE))
+    waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
+    last_profit_sell_price = state.get("last_profit_sell_price")
+    last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
+    profit_exit_date = state.get("profit_exit_date")
+    pullback_wait_days = trading_days_since(profit_exit_date, ticker) if waiting_for_pullback else 0
     highest_high_since_entry = state.get("highest_high_since_entry")
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     position_value = shares * current_price
@@ -602,8 +654,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     pnl_emoji = "🟢" if pnl >= 0 else "🔴"
     gap_to_stop = round(((trailing_stop - current_price) / current_price) * 100, 2) if trailing_stop is not None else None
     gap_to_sma = round(((sma200 - current_price) / current_price) * 100, 2)
-    next_profit_target = avg_cost * next_profit_multiple if position_open and avg_cost else None
-    position_status = "In position" if position_open else "Waiting for re-entry"
+    next_profit_target = avg_cost * (1 + SWING_PROFIT_TARGET_PCT) if position_open and avg_cost else None
+    rebuy_target = last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT) if waiting_for_pullback and last_profit_sell_price else None
+    position_status = "In position" if position_open else "Waiting for swing re-entry" if waiting_for_pullback else "Waiting for re-entry"
     risk_context_lines = build_risk_context(ticker, current_price, sma200, trailing_stop)
     price_source = ticker.attrs.get("price_source", "daily")
 
@@ -637,8 +690,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         else:
             lines.append("🛑 Trail Stop:   Not active")
         if next_profit_target:
-            next_profit_pct = int(round((next_profit_multiple - 1) * 100))
+            next_profit_pct = int(round(SWING_PROFIT_TARGET_PCT * 100))
             lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}  (+{next_profit_pct}% target)")
+        if rebuy_target:
+            lines.append(f"🔁 Re-buy:       ${rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from profit exit)")
+            lines.append(f"⏳ Wait Days:    {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS} trading days")
         lines.extend([
             "─" * 30,
             *risk_context_lines,
@@ -680,6 +736,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🛑 Trail Stop: ${trailing_stop:.2f}")
         if next_profit_target:
             lines.append(f"🎯 Next Profit: ${next_profit_target:.2f}")
+        if rebuy_target:
+            lines.append(f"🔁 Re-buy:     ${rebuy_target:.2f}")
+            lines.append(f"⏳ Wait Days:  {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",

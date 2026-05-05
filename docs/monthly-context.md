@@ -1,6 +1,6 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 ## English
 
@@ -12,14 +12,16 @@ The bot is advisory only. It sends instructions based on the strategy, and the h
 
 ### Current Strategy
 
-The current strategy is a high-risk/high-reward long-term TQQQ strategy:
+The current strategy is a high-risk/high-reward TQQQ swing strategy:
 
 1. Hold TQQQ while price is above the 200-day SMA.
 2. Sell all remaining shares if price crosses below the 200-day SMA.
 3. Sell all remaining shares if the true ratcheting 25% trailing stop is hit.
-4. Re-enter when price crosses back above the 200-day SMA.
-5. Take profit repeatedly: every time price reaches another +125% from the entry price, sell 90% of the remaining shares.
-6. After a full exit, the bot waits for the next re-entry signal and starts the cycle again.
+4. Sell all shares when price reaches +20% from the current entry price.
+5. After a +20% profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
+6. If the pullback does not happen within 20 trading days, re-buy anyway as long as price is still above SMA200.
+7. After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
+8. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
 There is no separate 5% hard stop anymore.
 
@@ -33,22 +35,24 @@ It only moves upward while the position is open. It resets after a full exit and
 
 Historical TQQQ tests originally showed that profit-taking helped the strategy compound better than no profit-taking.
 
-On 2026-05-04, profit-taking was retested with the current 25% ratcheting stop from 2010-11-24 through 2026-05-01. An earlier quick sweep was corrected because it had mislabeled the first profit target. The corrected test showed:
+On 2026-05-05, a more active swing version was tested. The goal was to sell into strength, wait for a pullback, and then re-buy while the trend remains healthy.
+
+The selected swing rule is:
+
+> Sell all at +20%, then re-buy after a 7.5% pullback from the sell price, or after 20 trading days if TQQQ is still above SMA200.
+
+Historical comparison from 2010-11-24 through 2026-05-01:
 
 | Strategy | Final Multiple | CAGR | Max Drawdown |
 | --- | ---: | ---: | ---: |
-| No profit taking | 55.6x | 29.7% | -42.7% |
-| Every +100%, sell 50% | 66.0x | 31.2% | -42.7% |
-| Every +50%, sell 25% | 67.6x | 31.4% | -42.7% |
-| Every +125%, sell 67% | 76.7x | 32.5% | -42.7% |
-| Every +125%, sell 75% | 77.6x | 32.6% | -42.7% |
-| Every +125%, sell 90% | 77.8x | 32.6% | -42.7% |
+| Previous strategy: +125%, sell 90% | 77.8x | 32.6% | -42.7% |
+| Swing +10%, re-buy after -3%, 20-day timeout | 36.6x | 26.3% | -44.6% |
+| Swing +25%, re-buy after -5%, 20-day timeout | 52.2x | 29.2% | -42.7% |
+| Swing +20%, re-buy after -7.5%, 20-day timeout | 97.4x | 34.5% | -42.4% |
 
-The selected rule is therefore:
+The +10% swing version was rejected because it traded too often and reduced compounding. The +20% / -7.5% version was selected because it improved the full-history result without increasing historical max drawdown.
 
-> Every +125% gain from entry, sell 90% of the remaining shares.
-
-This acts less often than smaller trims, but it tested best as the practical final-return rule while keeping the same max drawdown in the historical test.
+Important caveat: this is more active than the previous strategy. It may underperform during very strong uninterrupted bull runs because it sells earlier and waits for re-entry.
 
 This is still a volatile strategy. A roughly 50% drawdown happened historically even with the improved rules.
 
@@ -77,10 +81,12 @@ Current starting state as of 2026-04-30:
   "highest_high_since_entry": 65.84,
   "last_action": null,
   "last_action_at": null,
-  "next_profit_multiple": 2.25,
   "position_open": true,
+  "profit_exit_date": null,
   "shares": 40.4647,
-  "ticker": "TQQQ"
+  "ticker": "TQQQ",
+  "waiting_for_pullback": false,
+  "last_profit_sell_price": null
 }
 ```
 
@@ -90,8 +96,9 @@ Meaning:
 - Average cost is `$61.54`.
 - Shares are `40.4647`.
 - Highest high since entry is currently tracked as `$65.84`, making the active 25% trailing stop about `$49.38`.
-- The next profit-taking target is `2.25x` the entry price, around `$138.47`.
-- If a full exit happens, the bot will track cash and later tell when to re-enter.
+- The next profit-taking target is +20% from the current entry, around `$73.85`.
+- If a +20% profit exit happens, the bot will track cash, the sell price, and the re-buy rule.
+- If a stop or SMA200 exit happens, the bot waits for the next SMA200 cross-up instead of using the pullback rule.
 
 If real trades are made manually, `position_state.json` must match reality.
 
@@ -143,7 +150,7 @@ Intraday checks:
 Daily reports:
 
 - Send a full Telegram status message.
-- Include current price, SMA200, trailing stop, position mode, cash, shares, total value, P&L, and next profit target.
+- Include current price, SMA200, trailing stop, position mode, cash, shares, total value, P&L, next profit target, and pullback re-entry target if waiting after a profit exit.
 - Include the price source. During market hours, the bot overlays Yahoo's latest 1-minute TQQQ bar on top of the daily history so it does not rely on yesterday's close. If the latest 1-minute price is stale by more than 30 minutes while the market is open, the run fails and sends a workflow-failure alert instead of trading on stale data.
 - Include an advisory risk context section inspired by the TradingAgents idea: trend, RSI momentum, ATR volatility, a 4x ATR reference stop, and risk level.
 - This risk context is not a trading trigger. Buy/sell/profit-taking instructions still come only from the deterministic strategy rules.
@@ -208,14 +215,16 @@ Possible future improvements, only if needed:
 
 ### האסטרטגיה הנוכחית
 
-האסטרטגיה הנוכחית היא אסטרטגיית TQQQ לטווח ארוך עם סיכון גבוה וסיכוי גבוה:
+האסטרטגיה הנוכחית היא אסטרטגיית סווינג על TQQQ עם סיכון גבוה וסיכוי גבוה:
 
 1. להחזיק TQQQ כל עוד המחיר מעל SMA200.
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
 3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 25% מופעל.
-4. להיכנס מחדש כשהמחיר חוצה בחזרה מעל SMA200.
-5. לקחת רווח שוב ושוב: בכל פעם שהמחיר מגיע לעוד +125% ממחיר הכניסה, למכור 90% מהמניות שנותרו.
-6. אחרי יציאה מלאה, הבוט מחכה לאיתות כניסה חדש ומתחיל את המחזור מחדש.
+4. למכור את כל המניות כשהמחיר מגיע ל-+20% ממחיר הכניסה הנוכחי.
+5. אחרי יציאת רווח של +20%, לחכות לכניסה מחדש אחרי ירידה של 7.5% ממחיר המכירה.
+6. אם הירידה לא מגיעה תוך 20 ימי מסחר, להיכנס מחדש בכל זאת כל עוד המחיר עדיין מעל SMA200.
+7. אחרי יציאה בגלל סטופ או SMA200, לא משתמשים בכלל ה-pullback; מחכים לחצייה חדשה מעל SMA200.
+8. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
 
 אין יותר סטופ קשיח נפרד של 5%.
 
@@ -229,22 +238,24 @@ Possible future improvements, only if needed:
 
 בדיקות היסטוריות הראו שלקיחת רווח עוזרת לאסטרטגיה יותר מאשר לא לקחת רווח בכלל.
 
-ב-2026-05-04 בדקנו מחדש את כללי לקיחת הרווח עם הטריילינג סטופ הנוכחי של 25%, מתאריך 2010-11-24 עד 2026-05-01. בדיקה מהירה קודמת תוקנה כי היא סימנה לא נכון את יעד הרווח הראשון. הבדיקה המתוקנת הראתה:
+ב-2026-05-05 נבדקה גרסת סווינג אקטיבית יותר. המטרה הייתה למכור לתוך חוזקה, לחכות לירידה, ואז להיכנס מחדש כל עוד המגמה עדיין בריאה.
+
+כלל הסווינג שנבחר:
+
+> למכור הכל ב-+20%, ואז להיכנס מחדש אחרי ירידה של 7.5% ממחיר המכירה, או אחרי 20 ימי מסחר אם TQQQ עדיין מעל SMA200.
+
+השוואה היסטורית מ-2010-11-24 עד 2026-05-01:
 
 | אסטרטגיה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית |
 | --- | ---: | ---: | ---: |
-| בלי לקיחת רווח | 55.6x | 29.7% | -42.7% |
-| כל +100%, למכור 50% | 66.0x | 31.2% | -42.7% |
-| כל +50%, למכור 25% | 67.6x | 31.4% | -42.7% |
-| כל +125%, למכור 67% | 76.7x | 32.5% | -42.7% |
-| כל +125%, למכור 75% | 77.6x | 32.6% | -42.7% |
-| כל +125%, למכור 90% | 77.8x | 32.6% | -42.7% |
+| אסטרטגיה קודמת: +125%, למכור 90% | 77.8x | 32.6% | -42.7% |
+| סווינג +10%, כניסה אחרי -3%, timeout של 20 יום | 36.6x | 26.3% | -44.6% |
+| סווינג +25%, כניסה אחרי -5%, timeout של 20 יום | 52.2x | 29.2% | -42.7% |
+| סווינג +20%, כניסה אחרי -7.5%, timeout של 20 יום | 97.4x | 34.5% | -42.4% |
 
-לכן הכלל שנבחר הוא:
+גרסת ה-+10% נדחתה כי היא סוחרת יותר מדי ופוגעת בקומפאונדינג. גרסת +20% / -7.5% נבחרה כי היא שיפרה את התוצאה ההיסטורית המלאה בלי להגדיל את הירידה המקסימלית ההיסטורית.
 
-> בכל +125% רווח ממחיר הכניסה, למכור 90% מהמניות שנותרו.
-
-הכלל הזה פועל פחות פעמים מטרימים קטנים, אבל בבדיקה ההיסטורית הוא היה הכלל הפרקטי הטוב ביותר לתוצאה סופית, עם אותה ירידה מקסימלית.
+הערה חשובה: זו אסטרטגיה אקטיבית יותר מהקודמת. היא יכולה לפגר בתקופות של שוק שורי חזק בלי תיקונים, כי היא מוכרת מוקדם יותר ומחכה לכניסה מחדש.
 
 זו עדיין אסטרטגיה תנודתית. גם עם הכללים המשופרים הייתה היסטורית ירידה של בערך 50%.
 
@@ -273,10 +284,12 @@ Possible future improvements, only if needed:
   "highest_high_since_entry": 65.84,
   "last_action": null,
   "last_action_at": null,
-  "next_profit_multiple": 2.25,
   "position_open": true,
+  "profit_exit_date": null,
   "shares": 40.4647,
-  "ticker": "TQQQ"
+  "ticker": "TQQQ",
+  "waiting_for_pullback": false,
+  "last_profit_sell_price": null
 }
 ```
 
@@ -286,8 +299,9 @@ Possible future improvements, only if needed:
 - מחיר ממוצע הוא `$61.54`.
 - כמות המניות היא `40.4647`.
 - השיא מאז הכניסה נשמר כרגע כ-`$65.84`, ולכן הטריילינג סטופ הפעיל הוא בערך `$49.38`.
-- יעד לקיחת הרווח הבא הוא `2.25x` ממחיר הכניסה, בערך `$138.47`.
-- אם תהיה יציאה מלאה, הבוט יעקוב אחרי המזומן ויגיד מתי להיכנס מחדש.
+- יעד לקיחת הרווח הבא הוא +20% ממחיר הכניסה הנוכחי, בערך `$73.85`.
+- אם תהיה יציאת רווח של +20%, הבוט יעקוב אחרי המזומן, מחיר המכירה, וכלל הכניסה מחדש.
+- אם תהיה יציאה בגלל סטופ או SMA200, הבוט יחכה לחצייה חדשה מעל SMA200 במקום להשתמש בכלל ה-pullback.
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.
 
@@ -339,7 +353,7 @@ Worker:
 דוחות יומיים:
 
 - שולחים הודעת סטטוס מלאה לטלגרם.
-- כוללים מחיר נוכחי, SMA200, טריילינג סטופ, מצב פוזיציה, מזומן, מניות, ערך כולל, רווח/הפסד, ויעד הרווח הבא.
+- כוללים מחיר נוכחי, SMA200, טריילינג סטופ, מצב פוזיציה, מזומן, מניות, ערך כולל, רווח/הפסד, יעד הרווח הבא, ויעד כניסה מחדש אם מחכים אחרי יציאת רווח.
 - כוללים את מקור המחיר. בזמן המסחר, הבוט משתמש בבר 1 דקה האחרון של Yahoo על גבי ההיסטוריה היומית, כדי לא להסתמך בטעות על מחיר הסגירה של אתמול. אם מחיר ה-1 דקה האחרון ישן ביותר מ-30 דקות בזמן שהשוק פתוח, ההרצה נכשלת ושולחת התראת כשל במקום לפעול על מחיר לא עדכני.
 - כוללים גם אזור הקשר סיכון בהשראת רעיון TradingAgents: מגמה, מומנטום RSI, תנודתיות ATR, סטופ ייחוס של 4x ATR, ורמת סיכון.
 - הקשר הסיכון הוא מידע בלבד ולא טריגר למסחר. הוראות קנייה/מכירה/לקיחת רווח עדיין מגיעות רק מכללי האסטרטגיה הדטרמיניסטיים.

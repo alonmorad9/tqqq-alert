@@ -16,8 +16,13 @@ on:
           - daily
           - auto
           - manual_sold
+          - manual_bought
       manual_price:
-        description: 'Manual sell price, required only for manual_sold'
+        description: 'Price per share (required for manual_sold and manual_bought)'
+        required: false
+        default: ''
+      manual_shares:
+        description: 'Shares bought (optional for manual_bought — leave blank to use all tracked cash)'
         required: false
         default: ''
       schedule:
@@ -49,6 +54,7 @@ jobs:
           GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule || inputs.schedule }}
           RUN_MODE: ${{ inputs.mode || 'auto' }}
           MANUAL_PRICE: ${{ inputs.manual_price }}
+          MANUAL_SHARES: ${{ inputs.manual_shares }}
         run: python script.py "${RUN_MODE:-auto}"
       - name: Save position state
         run: |

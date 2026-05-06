@@ -1164,10 +1164,10 @@ def send_telegram(message):
     response.raise_for_status()
 
 
-def parse_manual_price():
+def parse_manual_price(mode="manual_sold"):
     raw_price = os.getenv("MANUAL_PRICE", "").strip()
     if not raw_price:
-        raise RuntimeError("manual_sold mode requires MANUAL_PRICE / manual_price input")
+        raise RuntimeError(f"{mode} mode requires MANUAL_PRICE / manual_price input")
 
     price = float(raw_price)
     if price <= 0:
@@ -1216,6 +1216,63 @@ def mark_manual_sold():
     ]
     send_telegram("\n".join(lines))
     print(f"[MANUAL SOLD] Safety mode activated | Price: {manual_price:.2f} | Cash: {cash:.2f}")
+
+
+def mark_manual_bought():
+    manual_price = parse_manual_price("manual_bought")
+    state = load_state()
+    cash = float(state.get("cash", 0.0))
+
+    raw_shares = os.getenv("MANUAL_SHARES", "").strip()
+    if raw_shares:
+        shares = float(raw_shares)
+        if shares <= 0:
+            raise RuntimeError("manual_shares must be greater than 0")
+        spent = shares * manual_price
+        remaining_cash = round(cash - spent, 2)
+        if remaining_cash < -0.01:
+            raise RuntimeError(f"manual_shares implies spending ${spent:.2f} but only ${cash:.2f} tracked cash available")
+    else:
+        shares = cash / manual_price if cash > 0 else 0.0
+        remaining_cash = 0.0
+
+    if shares <= 0:
+        raise RuntimeError("No tracked cash available to buy with — update position_state.json first")
+
+    state.update({
+        "position_open": True,
+        "shares": round(shares, 6),
+        "avg_cost": round(manual_price, 4),
+        "cash": remaining_cash,
+        "entry_date": datetime.now(UTC).date().isoformat(),
+        "highest_high_since_entry": round(manual_price, 4),
+        "waiting_for_pullback": False,
+        "waiting_for_early_reentry": False,
+        "early_exit_price": None,
+        "early_exit_date": None,
+        "last_profit_sell_price": None,
+        "profit_exit_date": None,
+        "manual_exit_mode": False,
+        "manual_exit_price": None,
+        "manual_exit_date": None,
+        "manual_exit_saw_below_sma": False,
+        "last_action": "manual_bought",
+    })
+    save_state(state)
+
+    next_profit_target = manual_price * (1 + SWING_PROFIT_TARGET_PCT)
+    lines = [
+        "\U0001f7e2 Manual Buy Recorded",
+        "\u2500" * 30,
+        f"Buy price:      ${manual_price:.2f}",
+        f"Shares bought:  {shares:.4f}",
+        f"Cash remaining: ${remaining_cash:.2f}",
+        "\u2500" * 30,
+        f"\U0001f3af Profit target: ${next_profit_target:.2f} (+{int(SWING_PROFIT_TARGET_PCT * 100)}%)",
+        "Bot will now track position and send alerts normally.",
+    ]
+    send_telegram("\n".join(lines))
+    print(f"[MANUAL BOUGHT] Position recorded | Price: {manual_price:.2f} | Shares: {shares:.4f}")
 
 
 def run_auto_mode():
@@ -1272,5 +1329,7 @@ if __name__ == "__main__":
         check_strategy(daily_report=True)
     elif mode == "manual_sold":
         mark_manual_sold()
+    elif mode == "manual_bought":
+        mark_manual_bought()
     else:
         check_strategy(daily_report=False)

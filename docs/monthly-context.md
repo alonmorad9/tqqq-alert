@@ -1,6 +1,6 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-05-05
+Last updated: 2026-05-06
 
 ## English
 
@@ -12,7 +12,7 @@ The bot is advisory only. It sends instructions based on the strategy, and the h
 
 ### Current Strategy
 
-The current strategy is a high-risk/high-reward TQQQ swing strategy:
+The current strategy is a high-risk/high-reward TQQQ swing strategy with an optimized early-warning exit layer:
 
 1. Hold TQQQ while price is above the 200-day SMA.
 2. Sell all remaining shares if price crosses below the 200-day SMA.
@@ -20,10 +20,22 @@ The current strategy is a high-risk/high-reward TQQQ swing strategy:
 4. Sell all shares when price reaches +20% from the current entry price.
 5. After a +20% profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
 6. If the pullback does not happen within 20 trading days, re-buy anyway as long as price is still above SMA200.
-7. After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
-8. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
+7. Sell all early if the optimized early-drop risk model reaches 3 active warning signs.
+8. After an early-warning exit, re-buy only when TQQQ is back above both SMA200 and SMA20.
+9. After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
+10. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
 There is no separate 5% hard stop anymore.
+
+The early-warning sell model checks five signals:
+
+- VIX is at or above 25.
+- VIX rose 25% or more over the last 5 trading days.
+- QQQ is below its EMA21.
+- TQQQ is below its SMA50.
+- TQQQ RSI14 is falling after being at or above 70.
+
+If at least 3 of these 5 signals are active while a position is open, the bot sends a sell-all instruction and moves into early-risk recovery mode.
 
 Manual safety mode is optional and does not run unless triggered manually from GitHub Actions. It is used only if the human manually/panic sells outside the normal strategy. In that case, the bot records the manual sell price and will not immediately re-buy just because TQQQ is still above SMA200. It waits for either:
 
@@ -72,28 +84,40 @@ On 2026-05-03, trailing stop variants were retested from 2010-11-24 through 2026
 
 The chosen stop is therefore the 25% true ratchet. ATR-based stops were tested, but the useful ATR version had to be very wide and still did not beat the simpler 25% ratchet.
 
+On 2026-05-06, an early-warning strategy search was run from 2010-11-24 through 2026-05-06 using TQQQ, QQQ, and VIX. The selected version was the best return version that also improved drawdown versus the local current-swing baseline:
+
+| Strategy | Final Multiple | CAGR | Max Drawdown | Trades | Early Exits |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Current swing baseline in this test | 36.7x | 26.3% | -49.5% | 164 | 0 |
+| Early warning: 3-of-5 risk model | 85.8x | 33.4% | -46.1% | 240 | 49 |
+| Early warning: simpler best Calmar version | 75.1x | 32.3% | -44.0% | 228 | 42 |
+
+Decision: switch the live bot to the best-return early-warning version because the real position is currently in cash. This is more active and may create more alerts, but historically it improved both final return and drawdown in the 2026-05-06 test.
+
 ### Current Position State
 
 The live state is stored in `position_state.json`.
 
-Current live state as of 2026-05-05 after a manual sell:
+Current live state as of 2026-05-06 after switching to the early-warning strategy while in cash:
 
 ```json
 {
   "avg_cost": null,
   "cash": 2726.11,
+  "early_exit_date": "2026-05-05",
+  "early_exit_price": 67.37,
   "entry_date": null,
   "highest_high_since_entry": null,
-  "last_action": "manual_sold",
-  "last_action_at": "2026-05-05T15:28:24+00:00",
-  "manual_exit_date": "2026-05-05",
-  "manual_exit_mode": true,
-  "manual_exit_price": 67.37,
+  "last_action": "strategy_switched_to_early_warning_cash",
+  "manual_exit_date": null,
+  "manual_exit_mode": false,
+  "manual_exit_price": null,
   "manual_exit_saw_below_sma": false,
   "position_open": false,
   "profit_exit_date": null,
   "shares": 0.0,
   "ticker": "TQQQ",
+  "waiting_for_early_reentry": true,
   "waiting_for_pullback": false,
   "last_profit_sell_price": null
 }
@@ -102,12 +126,11 @@ Current live state as of 2026-05-05 after a manual sell:
 Meaning:
 
 - The bot assumes there is no open TQQQ position.
-- The position was manually sold at `$67.37`.
+- The previous real position was manually sold at `$67.37`.
 - Tracked cash is `$2726.11`.
-- Manual safety mode is active.
-- Manual re-buy pullback level is `$62.32` (`67.37 x 0.925`).
-- The bot should not immediately re-buy just because TQQQ is above SMA200.
-- It should re-buy only after the 7.5% manual pullback level is hit while above SMA200, or after price goes below SMA200 and later crosses back above it.
+- Manual safety mode is no longer active.
+- The bot is waiting for early-risk recovery.
+- Re-buy condition: TQQQ above SMA200 and SMA20.
 
 If real trades are made manually, `position_state.json` must match reality.
 
@@ -253,7 +276,7 @@ Possible future improvements, only if needed:
 
 ### האסטרטגיה הנוכחית
 
-האסטרטגיה הנוכחית היא אסטרטגיית סווינג על TQQQ עם סיכון גבוה וסיכוי גבוה:
+האסטרטגיה הנוכחית היא אסטרטגיית סווינג על TQQQ עם סיכון גבוה וסיכוי גבוה, בתוספת שכבת יציאה מוקדמת לפי סיכון:
 
 1. להחזיק TQQQ כל עוד המחיר מעל SMA200.
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
@@ -261,10 +284,22 @@ Possible future improvements, only if needed:
 4. למכור את כל המניות כשהמחיר מגיע ל-+20% ממחיר הכניסה הנוכחי.
 5. אחרי יציאת רווח של +20%, לחכות לכניסה מחדש אחרי ירידה של 7.5% ממחיר המכירה.
 6. אם הירידה לא מגיעה תוך 20 ימי מסחר, להיכנס מחדש בכל זאת כל עוד המחיר עדיין מעל SMA200.
-7. אחרי יציאה בגלל סטופ או SMA200, לא משתמשים בכלל ה-pullback; מחכים לחצייה חדשה מעל SMA200.
-8. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
+7. למכור הכל מוקדם אם מודל הסיכון המוקדם מגיע ל-3 סימני אזהרה פעילים.
+8. אחרי יציאת early-warning, להיכנס מחדש רק כש-TQQQ חוזרת מעל SMA200 וגם מעל SMA20.
+9. אחרי יציאה בגלל סטופ או SMA200, לא משתמשים בכלל ה-pullback; מחכים לחצייה חדשה מעל SMA200.
+10. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
 
 אין יותר סטופ קשיח נפרד של 5%.
+
+מודל המכירה המוקדמת בודק חמישה סימנים:
+
+- VIX שווה או מעל 25.
+- VIX עלה 25% או יותר ב-5 ימי המסחר האחרונים.
+- QQQ מתחת ל-EMA21.
+- TQQQ מתחת ל-SMA50.
+- RSI14 של TQQQ יורד אחרי שהיה 70 ומעלה.
+
+אם לפחות 3 מתוך 5 הסימנים פעילים בזמן שיש פוזיציה פתוחה, הבוט שולח הוראת מכירה מלאה ונכנס למצב המתנה להתאוששות סיכון.
 
 מצב בטיחות ידני הוא אופציונלי ולא פועל אלא אם מפעילים אותו ידנית דרך GitHub Actions. משתמשים בו רק אם האדם מוכר ידנית/מפאניקה מחוץ לאסטרטגיה הרגילה. במקרה כזה, הבוט שומר את מחיר המכירה הידני ולא יקנה מיד בחזרה רק כי TQQQ עדיין מעל SMA200. הוא מחכה לאחד משני דברים:
 
@@ -313,28 +348,40 @@ Possible future improvements, only if needed:
 
 לכן הסטופ שנבחר הוא טריילינג אמיתי של 25%. נבדקו גם סטופים לפי ATR, אבל הגרסה הטובה הייתה צריכה להיות רחבה מאוד ועדיין לא ניצחה את כלל ה-25% הפשוט.
 
+ב-2026-05-06 הורץ חיפוש אסטרטגיות early-warning מ-2010-11-24 עד 2026-05-06 על TQQQ, QQQ ו-VIX. הגרסה שנבחרה הייתה גרסת התשואה הטובה ביותר שגם שיפרה את הירידה המקסימלית לעומת בסיס הסווינג המקומי:
+
+| אסטרטגיה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית | עסקאות | יציאות מוקדמות |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| בסיס סווינג בבדיקה הזו | 36.7x | 26.3% | -49.5% | 164 | 0 |
+| Early warning: מודל סיכון 3 מתוך 5 | 85.8x | 33.4% | -46.1% | 240 | 49 |
+| Early warning: גרסת Calmar פשוטה יותר | 75.1x | 32.3% | -44.0% | 228 | 42 |
+
+החלטה: להעביר את הבוט החי לגרסת ה-early-warning עם התשואה הטובה ביותר, כי הפוזיציה האמיתית כרגע במזומן. זו גרסה אקטיבית יותר ועלולה לשלוח יותר התראות, אבל בבדיקה ההיסטורית של 2026-05-06 היא שיפרה גם תשואה וגם drawdown.
+
 ### מצב הפוזיציה הנוכחי
 
 המצב החי נשמר בקובץ `position_state.json`.
 
-מצב חי נכון ל-2026-05-05 אחרי מכירה ידנית:
+מצב חי נכון ל-2026-05-06 אחרי מעבר לאסטרטגיית early-warning בזמן שהחשבון במזומן:
 
 ```json
 {
   "avg_cost": null,
   "cash": 2726.11,
+  "early_exit_date": "2026-05-05",
+  "early_exit_price": 67.37,
   "entry_date": null,
   "highest_high_since_entry": null,
-  "last_action": "manual_sold",
-  "last_action_at": "2026-05-05T15:28:24+00:00",
-  "manual_exit_date": "2026-05-05",
-  "manual_exit_mode": true,
-  "manual_exit_price": 67.37,
+  "last_action": "strategy_switched_to_early_warning_cash",
+  "manual_exit_date": null,
+  "manual_exit_mode": false,
+  "manual_exit_price": null,
   "manual_exit_saw_below_sma": false,
   "position_open": false,
   "profit_exit_date": null,
   "shares": 0.0,
   "ticker": "TQQQ",
+  "waiting_for_early_reentry": true,
   "waiting_for_pullback": false,
   "last_profit_sell_price": null
 }
@@ -343,12 +390,11 @@ Possible future improvements, only if needed:
 המשמעות:
 
 - הבוט מניח שאין פוזיציה פתוחה ב-TQQQ.
-- הפוזיציה נמכרה ידנית במחיר `$67.37`.
+- הפוזיציה האמיתית הקודמת נמכרה ידנית במחיר `$67.37`.
 - המזומן במעקב הוא `$2726.11`.
-- מצב בטיחות ידני פעיל.
-- יעד הכניסה הידני מחדש הוא `$62.32` (`67.37 x 0.925`).
-- הבוט לא אמור לקנות מיד בחזרה רק כי TQQQ מעל SMA200.
-- הוא אמור לקנות מחדש רק אם מחיר ה-pullback הידני של 7.5% מופעל בזמן שהמחיר מעל SMA200, או אחרי שהמחיר ירד מתחת SMA200 ובהמשך חצה בחזרה מעליו.
+- מצב בטיחות ידני כבר לא פעיל.
+- הבוט מחכה להתאוששות מסיכון מוקדם.
+- תנאי כניסה מחדש: TQQQ מעל SMA200 וגם מעל SMA20.
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.
 

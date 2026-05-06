@@ -313,8 +313,23 @@ Questions to answer:
 
 ## Current Recommendation
 
-The live TQQQ bot has been changed to the +20% swing profit cycle.
+The live TQQQ bot has been changed to the +20% swing profit cycle plus an optimized early-warning exit layer.
 
-The current TQQQ strategy is still simple, tested, and operational, but it is now more active than the previous +125% trim system. Watch the next month for whether it exits too early during a strong trend.
+On 2026-05-06, an early-warning search tested TQQQ, QQQ, and VIX signals from 2010-11-24 through 2026-05-06. The selected live rule sells all when at least 3 of these 5 conditions are active:
 
-The best next research path is a separate "Nasdaq Momentum Rotation" study, not another quick tweak to the TQQQ bot.
+- VIX >= 25.
+- VIX 5-day increase >= 25%.
+- QQQ below EMA21.
+- TQQQ below SMA50.
+- TQQQ RSI14 falling after being at or above 70.
+
+Historical comparison in that local test:
+
+| Strategy | Final | CAGR | Max DD | Trades | Early Exits |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Current swing baseline in this test | 36.7x | 26.3% | -49.5% | 164 | 0 |
+| Selected early-warning strategy | 85.8x | 33.4% | -46.1% | 240 | 49 |
+
+The real account is currently in cash after the 2026-05-05 manual sell. Manual safety mode was cleared, and `position_state.json` now waits for early-risk recovery: re-buy only when TQQQ is above SMA200 and SMA20.
+
+The current TQQQ strategy is more active than the previous versions. Watch the next month for whether the early-warning layer creates too many false exits during strong trends.

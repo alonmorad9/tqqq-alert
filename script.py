@@ -21,6 +21,9 @@ TRAILING_STOP_PCT = 0.25
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.075
 SWING_REBUY_TIMEOUT_DAYS = 20
+EARLY_WARNING_VIX_LEVEL = 25
+EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
+EARLY_WARNING_RISK_THRESHOLD = 3
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -232,6 +235,7 @@ def default_state():
         "cash": 0.0,
         "highest_high_since_entry": None,
         "waiting_for_pullback": False,
+        **clear_early_exit_fields(),
         "last_profit_sell_price": None,
         "profit_exit_date": None,
         "manual_exit_mode": False,
@@ -285,34 +289,26 @@ def fetch_market_data():
     import pandas as pd
     import yfinance as yf
 
-    ticker = yf.download(TICKER, period="2y", interval="1d", auto_adjust=True, progress=False)
+    def normalize_columns(df):
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [c[0] for c in df.columns]
+        return df
 
-    if isinstance(ticker.columns, pd.MultiIndex):
-        ticker.columns = [c[0] for c in ticker.columns]
+    def overlay_live_bar(daily, intraday):
+        if intraday.empty:
+            return daily, "daily", None
 
-    if ticker.empty:
-        raise RuntimeError(f"No market data returned for {TICKER}")
+        intraday = normalize_columns(intraday).dropna(subset=["Close"])
+        if intraday.empty:
+            return daily, "daily", None
 
-    intraday = yf.download(TICKER, period="5d", interval="1m", auto_adjust=True, progress=False)
-
-    if isinstance(intraday.columns, pd.MultiIndex):
-        intraday.columns = [c[0] for c in intraday.columns]
-
-    live_source = "daily"
-    live_age = None
-    market_open, _ = is_market_open(datetime.now(UTC))
-    if not intraday.empty:
-        intraday = intraday.dropna(subset=["Close"])
-
-    if not intraday.empty:
         latest_bar_time = intraday.index[-1]
         if latest_bar_time.tzinfo is None:
             latest_bar_utc = latest_bar_time.tz_localize(MARKET_TZ).tz_convert(UTC)
         else:
             latest_bar_utc = latest_bar_time.tz_convert(UTC)
 
-        now_utc = datetime.now(UTC)
-        live_age = now_utc - latest_bar_utc.to_pydatetime()
+        live_age = datetime.now(UTC) - latest_bar_utc.to_pydatetime()
         latest_day = latest_bar_utc.astimezone(MARKET_TZ).date()
         day_bars = intraday[intraday.index.map(date_only) == latest_day]
         latest_close = float(day_bars["Close"].iloc[-1])
@@ -321,24 +317,48 @@ def fetch_market_data():
         latest_open = float(day_bars["Open"].iloc[0])
         latest_volume = float(day_bars["Volume"].sum()) if "Volume" in day_bars else 0.0
 
-        daily_dates = ticker.index.map(date_only)
+        daily_dates = daily.index.map(date_only)
         if latest_day in set(daily_dates):
-            row_index = ticker.index[daily_dates == latest_day][-1]
-            ticker.loc[row_index, "Open"] = latest_open
-            ticker.loc[row_index, "High"] = max(float(ticker.loc[row_index, "High"]), latest_high)
-            ticker.loc[row_index, "Low"] = min(float(ticker.loc[row_index, "Low"]), latest_low)
-            ticker.loc[row_index, "Close"] = latest_close
-            ticker.loc[row_index, "Volume"] = latest_volume
+            row_index = daily.index[daily_dates == latest_day][-1]
+            daily.loc[row_index, "Open"] = latest_open
+            daily.loc[row_index, "High"] = max(float(daily.loc[row_index, "High"]), latest_high)
+            daily.loc[row_index, "Low"] = min(float(daily.loc[row_index, "Low"]), latest_low)
+            daily.loc[row_index, "Close"] = latest_close
+            daily.loc[row_index, "Volume"] = latest_volume
         else:
-            ticker.loc[pd.Timestamp(latest_day)] = {
+            daily.loc[pd.Timestamp(latest_day)] = {
                 "Open": latest_open,
                 "High": latest_high,
                 "Low": latest_low,
                 "Close": latest_close,
                 "Volume": latest_volume,
             }
-            ticker = ticker.sort_index()
-        live_source = f"1m bar {latest_bar_utc.isoformat()}"
+            daily = daily.sort_index()
+
+        return daily, f"1m bar {latest_bar_utc.isoformat()}", live_age
+
+    ticker = normalize_columns(yf.download(TICKER, period="2y", interval="1d", auto_adjust=True, progress=False))
+
+    if ticker.empty:
+        raise RuntimeError(f"No market data returned for {TICKER}")
+
+    qqq = normalize_columns(yf.download("QQQ", period="2y", interval="1d", auto_adjust=True, progress=False))
+    vix = normalize_columns(yf.download("^VIX", period="2y", interval="1d", auto_adjust=True, progress=False))
+    if qqq.empty:
+        raise RuntimeError("No market data returned for QQQ")
+    if vix.empty:
+        raise RuntimeError("No market data returned for ^VIX")
+
+    intraday = yf.download(TICKER, period="5d", interval="1m", auto_adjust=True, progress=False)
+    qqq_intraday = yf.download("QQQ", period="5d", interval="1m", auto_adjust=True, progress=False)
+    vix_intraday = yf.download("^VIX", period="5d", interval="1m", auto_adjust=True, progress=False)
+
+    live_source = "daily"
+    live_age = None
+    market_open, _ = is_market_open(datetime.now(UTC))
+    ticker, live_source, live_age = overlay_live_bar(ticker, intraday)
+    qqq, qqq_live_source, qqq_live_age = overlay_live_bar(qqq, qqq_intraday)
+    vix, vix_live_source, vix_live_age = overlay_live_bar(vix, vix_intraday)
 
     if market_open and (intraday.empty or live_age is None or live_age > MAX_LIVE_PRICE_AGE):
         age_text = "unavailable" if live_age is None else str(live_age)
@@ -349,6 +369,9 @@ def fetch_market_data():
     ticker["SMA50"] = ticker["Close"].rolling(window=50).mean()
     ticker["SMA60"] = ticker["Close"].rolling(window=60).mean()
     ticker["RSI14"] = calculate_rsi(ticker["Close"], 14)
+    qqq["EMA21"] = qqq["Close"].ewm(span=21, adjust=False).mean()
+    qqq["EMA50"] = qqq["Close"].ewm(span=50, adjust=False).mean()
+    vix["RET5"] = vix["Close"].pct_change(5)
 
     prev_close = ticker["Close"].shift(1)
     true_range = pd.concat([
@@ -357,7 +380,13 @@ def fetch_market_data():
         (ticker["Low"] - prev_close).abs(),
     ], axis=1).max(axis=1)
     ticker["ATR14"] = true_range.rolling(window=14).mean()
+    qqq_signal = qqq[["Close", "EMA21", "EMA50"]].add_prefix("QQQ_")
+    vix_signal = vix[["Close", "RET5"]].add_prefix("VIX_")
+    ticker = ticker.join(qqq_signal, how="left").join(vix_signal, how="left").ffill()
+    ticker = ticker.dropna(subset=["SMA200", "SMA20", "SMA50", "RSI14", "QQQ_Close", "QQQ_EMA21", "VIX_Close", "VIX_RET5"])
     ticker.attrs["price_source"] = live_source
+    ticker.attrs["qqq_price_source"] = qqq_live_source
+    ticker.attrs["vix_price_source"] = vix_live_source
     return ticker
 
 
@@ -423,6 +452,51 @@ def clear_manual_exit_fields():
         "manual_exit_price": None,
         "manual_exit_date": None,
         "manual_exit_saw_below_sma": False,
+    }
+
+
+def clear_early_exit_fields():
+    return {
+        "waiting_for_early_reentry": False,
+        "early_exit_price": None,
+        "early_exit_date": None,
+    }
+
+
+def calculate_early_warning(ticker):
+    row = ticker.iloc[-1]
+    prev = ticker.iloc[-2]
+
+    conditions = [
+        ("VIX >= 25", float(row["VIX_Close"]) >= EARLY_WARNING_VIX_LEVEL),
+        ("VIX 5d spike >= 25%", float(row["VIX_RET5"]) >= EARLY_WARNING_VIX_5D_SPIKE_PCT),
+        ("QQQ below EMA21", float(row["QQQ_Close"]) < float(row["QQQ_EMA21"])),
+        ("TQQQ below SMA50", float(row["Close"]) < float(row["SMA50"])),
+        ("RSI falling from 70+", float(prev["RSI14"]) >= 70 and float(row["RSI14"]) < float(prev["RSI14"])),
+    ]
+    active = [label for label, is_active in conditions if is_active]
+    score = len(active)
+    if score >= EARLY_WARNING_RISK_THRESHOLD:
+        level = "High"
+    elif score >= 2:
+        level = "Elevated"
+    elif score == 1:
+        level = "Watch"
+    else:
+        level = "Low"
+
+    return {
+        "score": score,
+        "threshold": EARLY_WARNING_RISK_THRESHOLD,
+        "level": level,
+        "active": active,
+        "hit": score >= EARLY_WARNING_RISK_THRESHOLD,
+        "vix": float(row["VIX_Close"]),
+        "vix_ret5": float(row["VIX_RET5"]),
+        "qqq_close": float(row["QQQ_Close"]),
+        "qqq_ema21": float(row["QQQ_EMA21"]),
+        "tqqq_sma50": float(row["SMA50"]),
+        "rsi14": float(row["RSI14"]),
     }
 
 
@@ -497,6 +571,17 @@ def build_risk_context(ticker, current_price, sma200, trailing_stop):
     ]
 
 
+def build_early_warning_lines(early_warning):
+    active = ", ".join(early_warning["active"]) if early_warning["active"] else "none"
+    return [
+        "🔮 Early Drop Risk",
+        f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active)",
+        f"Active:        {active}",
+        f"VIX:           {early_warning['vix']:.2f} ({early_warning['vix_ret5']:+.1%} over 5d)",
+        f"QQQ vs EMA21:  ${early_warning['qqq_close']:.2f} / ${early_warning['qqq_ema21']:.2f}",
+    ]
+
+
 def update_bot_strategy_benchmark(ticker):
     state = load_bot_strategy_state()
 
@@ -512,6 +597,7 @@ def update_bot_strategy_benchmark(ticker):
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
     waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
+    waiting_for_early_reentry = bool(state.get("waiting_for_early_reentry", False))
     last_profit_sell_price = state.get("last_profit_sell_price")
     last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
     profit_exit_date = state.get("profit_exit_date")
@@ -529,9 +615,11 @@ def update_bot_strategy_benchmark(ticker):
             state_changed = True
 
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
+    early_warning = calculate_early_warning(ticker)
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
+    hit_early_warning_exit = position_open and early_warning["hit"]
     hit_profit_target = (
         position_open
         and shares > 0
@@ -546,7 +634,8 @@ def update_bot_strategy_benchmark(ticker):
     )
     hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
     hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma
-    hit_fresh_buy_signal = crossed_above_sma and not waiting_for_pullback
+    hit_early_reentry_signal = waiting_for_early_reentry and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1])
+    hit_fresh_buy_signal = (crossed_above_sma or (not state.get("last_action") and above_sma)) and not waiting_for_pullback and not waiting_for_early_reentry
 
     if position_open and (hit_trailing_stop or crossed_below_sma):
         cash += shares * current_price
@@ -559,6 +648,9 @@ def update_bot_strategy_benchmark(ticker):
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": False,
+            "waiting_for_early_reentry": False,
+            "early_exit_price": None,
+            "early_exit_date": None,
             "last_profit_sell_price": None,
             "profit_exit_date": None,
             "last_action": action,
@@ -575,12 +667,34 @@ def update_bot_strategy_benchmark(ticker):
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": True,
+            "waiting_for_early_reentry": False,
+            "early_exit_price": None,
+            "early_exit_date": None,
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": current_date,
             "last_action": action,
         })
         state_changed = True
-    elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal):
+    elif position_open and hit_early_warning_exit:
+        cash += shares * current_price
+        action = "benchmark_sell_early_warning"
+        state.update({
+            "position_open": False,
+            "shares": 0.0,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "highest_high_since_entry": None,
+            "waiting_for_pullback": False,
+            "last_profit_sell_price": None,
+            "profit_exit_date": None,
+            "waiting_for_early_reentry": True,
+            "early_exit_price": round(current_price, 4),
+            "early_exit_date": current_date,
+            "last_action": action,
+        })
+        state_changed = True
+    elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_early_reentry_signal):
         buy_cash = cash
         buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
         if buy_shares > 0:
@@ -589,6 +703,8 @@ def update_bot_strategy_benchmark(ticker):
                 action = "benchmark_buy_pullback"
             elif hit_rebuy_timeout:
                 action = "benchmark_buy_timeout"
+            elif hit_early_reentry_signal:
+                action = "benchmark_buy_early_reentry"
             state.update({
                 "position_open": True,
                 "entry_date": current_date,
@@ -597,6 +713,9 @@ def update_bot_strategy_benchmark(ticker):
                 "cash": 0.0,
                 "highest_high_since_entry": round(current_high, 4),
                 "waiting_for_pullback": False,
+                "waiting_for_early_reentry": False,
+                "early_exit_price": None,
+                "early_exit_date": None,
                 "last_profit_sell_price": None,
                 "profit_exit_date": None,
                 "last_action": action,
@@ -612,11 +731,12 @@ def update_bot_strategy_benchmark(ticker):
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
     waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
+    waiting_for_early_reentry = bool(state.get("waiting_for_early_reentry", False))
     last_profit_sell_price = state.get("last_profit_sell_price")
     last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
     position_value = shares * current_price
     total_value = cash + position_value
-    benchmark_status = "In position" if position_open else "Waiting for swing re-entry" if waiting_for_pullback else "Waiting for re-entry"
+    benchmark_status = "In position" if position_open else "Waiting for early-risk recovery" if waiting_for_early_reentry else "Waiting for swing re-entry" if waiting_for_pullback else "Waiting for re-entry"
     next_profit_target = avg_cost * (1 + SWING_PROFIT_TARGET_PCT) if position_open and avg_cost else None
     rebuy_target = last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT) if waiting_for_pullback and last_profit_sell_price else None
 
@@ -629,6 +749,7 @@ def update_bot_strategy_benchmark(ticker):
         "total_value": total_value,
         "next_profit_target": next_profit_target,
         "rebuy_target": rebuy_target,
+        "early_warning": early_warning,
     }
 
 
@@ -648,6 +769,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
     waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
+    waiting_for_early_reentry = bool(state.get("waiting_for_early_reentry", False))
     last_profit_sell_price = state.get("last_profit_sell_price")
     last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
     profit_exit_date = state.get("profit_exit_date")
@@ -666,6 +788,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             state["highest_high_since_entry"] = round(highest_high_since_entry, 4)
             state_dirty = True
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
+    early_warning = calculate_early_warning(ticker)
 
     position_value = shares * current_price
     cost_basis = shares * avg_cost
@@ -677,6 +800,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
+    hit_early_warning_exit = position_open and early_warning["hit"]
     hit_profit_target = (
         position_open
         and shares > 0
@@ -703,7 +827,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     )
     hit_manual_rebuy_reset = manual_exit_mode and manual_exit_saw_below_sma and crossed_above_sma
     hit_manual_rebuy_signal = (hit_manual_rebuy_pullback or hit_manual_rebuy_reset) and above_sma
-    hit_fresh_buy_signal = crossed_above_sma and not waiting_for_pullback and not manual_exit_mode
+    hit_early_reentry_signal = waiting_for_early_reentry and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1])
+    hit_fresh_buy_signal = (
+        crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
+    ) and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode
 
     action = None
     instruction_lines = []
@@ -720,6 +847,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": False,
+            **clear_early_exit_fields(),
             "last_profit_sell_price": None,
             "profit_exit_date": None,
             **clear_manual_exit_fields(),
@@ -740,6 +868,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": False,
+            **clear_early_exit_fields(),
             "last_profit_sell_price": None,
             "profit_exit_date": None,
             **clear_manual_exit_fields(),
@@ -761,6 +890,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": True,
+            **clear_early_exit_fields(),
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
             **clear_manual_exit_fields(),
@@ -771,7 +901,32 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
         rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
         instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
-    elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_manual_rebuy_signal):
+    elif position_open and hit_early_warning_exit:
+        sell_shares = shares
+        cash += sell_shares * current_price
+        shares = 0.0
+        state.update({
+            "position_open": False,
+            "shares": shares,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "highest_high_since_entry": None,
+            "waiting_for_pullback": False,
+            "last_profit_sell_price": None,
+            "profit_exit_date": None,
+            "waiting_for_early_reentry": True,
+            "early_exit_price": round(current_price, 4),
+            "early_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
+            **clear_manual_exit_fields(),
+            "last_action": "sell_all_early_warning",
+        })
+        state_changed = True
+        action = "🔮 SELL ALL — EARLY DROP RISK HIGH"
+        instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
+        instruction_lines.append(f"Risk signals: {', '.join(early_warning['active'])}")
+        instruction_lines.append("Next re-buy trigger: price above SMA200 and SMA20 after risk cools.")
+    elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_manual_rebuy_signal or hit_early_reentry_signal):
         buy_cash = cash
         buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
         if buy_shares > 0:
@@ -789,6 +944,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             elif hit_manual_rebuy_reset:
                 buy_reason = "buy_manual_sma_reset"
                 action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
+            elif hit_early_reentry_signal:
+                buy_reason = "buy_early_risk_recovery"
+                action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
             shares = buy_shares
             cash = 0.0
             state.update({
@@ -799,6 +957,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 "cash": cash,
                 "highest_high_since_entry": round(current_high, 4),
                 "waiting_for_pullback": False,
+                **clear_early_exit_fields(),
                 "last_profit_sell_price": None,
                 "profit_exit_date": None,
                 **clear_manual_exit_fields(),
@@ -817,11 +976,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
             elif hit_manual_rebuy_reset:
                 action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
+            elif hit_early_reentry_signal:
+                action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
             instruction_lines.append("No tracked cash is available; update position_state.json after buying.")
     elif position_open and trailing_stop is not None and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
     elif waiting_for_pullback:
         action = "⏳ WAIT — Waiting for pullback or timeout re-entry"
+    elif waiting_for_early_reentry:
+        action = "🔮 WAIT — Waiting for early-risk recovery"
     elif manual_exit_mode:
         action = "🧯 WAIT — Manual safety mode"
     elif current_price < sma200:
@@ -835,12 +998,14 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     is_signal = state_changed or (not position_open and hit_fresh_buy_signal)
     is_signal = is_signal or (not position_open and hit_rebuy_signal)
     is_signal = is_signal or (not position_open and hit_manual_rebuy_signal)
+    is_signal = is_signal or (not position_open and hit_early_reentry_signal)
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
     waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
+    waiting_for_early_reentry = bool(state.get("waiting_for_early_reentry", False))
     last_profit_sell_price = state.get("last_profit_sell_price")
     last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
     profit_exit_date = state.get("profit_exit_date")
@@ -868,6 +1033,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         position_status = "In position"
     elif manual_exit_mode:
         position_status = "Manual safety mode"
+    elif waiting_for_early_reentry:
+        position_status = "Waiting for early-risk recovery"
     elif waiting_for_pullback:
         position_status = "Waiting for swing re-entry"
     else:
@@ -919,6 +1086,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         lines.extend([
             "─" * 30,
             *risk_context_lines,
+            "─" * 30,
+            *build_early_warning_lines(early_warning),
         ])
         lines.extend([
             "─" * 30,
@@ -969,6 +1138,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🧯 Manual Re-buy: ${manual_rebuy_target:.2f}")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset: {reset_status}")
+        if waiting_for_early_reentry:
+            lines.append("🔮 Early Re-buy: above SMA200 and SMA20")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",

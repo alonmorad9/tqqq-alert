@@ -15,6 +15,7 @@ TICKER = "TQQQ"
 # ──────────────────────────────────────────────────────────
 
 STATE_FILE = Path("position_state.json")
+BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
 TRAILING_STOP_PCT = 0.25
 SWING_PROFIT_TARGET_PCT = 0.20
@@ -261,6 +262,25 @@ def save_state(state):
     STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
 
 
+def load_bot_strategy_state():
+    if not BOT_STRATEGY_STATE_FILE.exists():
+        return default_state()
+
+    with BOT_STRATEGY_STATE_FILE.open() as f:
+        state = json.load(f)
+
+    state.pop("next_profit_multiple", None)
+    merged = default_state()
+    merged.update(state)
+    merged.update(clear_manual_exit_fields())
+    return merged
+
+
+def save_bot_strategy_state(state):
+    state["last_action_at"] = datetime.now(UTC).isoformat()
+    BOT_STRATEGY_STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+
+
 def fetch_market_data():
     import pandas as pd
     import yfinance as yf
@@ -477,9 +497,145 @@ def build_risk_context(ticker, current_price, sma200, trailing_stop):
     ]
 
 
+def update_bot_strategy_benchmark(ticker):
+    state = load_bot_strategy_state()
+
+    current_price = float(ticker["Close"].iloc[-1])
+    current_high = float(ticker["High"].iloc[-1])
+    sma200 = float(ticker["SMA200"].iloc[-1])
+    prev_price = float(ticker["Close"].iloc[-2])
+    prev_sma200 = float(ticker["SMA200"].iloc[-2])
+    current_date = ticker.index[-1].strftime("%Y-%m-%d")
+
+    position_open = bool(state["position_open"])
+    shares = float(state["shares"])
+    avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
+    cash = float(state.get("cash", 0.0))
+    waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
+    last_profit_sell_price = state.get("last_profit_sell_price")
+    last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
+    profit_exit_date = state.get("profit_exit_date")
+    pullback_wait_days = trading_days_since(profit_exit_date, ticker) if waiting_for_pullback else 0
+
+    state_changed = False
+    action = "benchmark_hold"
+
+    highest_high_since_entry = initialize_highest_high_since_entry(state, ticker)
+    if position_open:
+        updated_high = max(highest_high_since_entry or current_high, current_high)
+        if state.get("highest_high_since_entry") != round(updated_high, 4):
+            highest_high_since_entry = updated_high
+            state["highest_high_since_entry"] = round(highest_high_since_entry, 4)
+            state_changed = True
+
+    trailing_stop = calculate_trailing_stop(highest_high_since_entry)
+    crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
+    crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
+    hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
+    hit_profit_target = (
+        position_open
+        and shares > 0
+        and avg_cost > 0
+        and current_price >= avg_cost * (1 + SWING_PROFIT_TARGET_PCT)
+    )
+    above_sma = current_price > sma200
+    hit_rebuy_pullback = (
+        waiting_for_pullback
+        and last_profit_sell_price is not None
+        and current_price <= last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT)
+    )
+    hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
+    hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma
+    hit_fresh_buy_signal = crossed_above_sma and not waiting_for_pullback
+
+    if position_open and (hit_trailing_stop or crossed_below_sma):
+        cash += shares * current_price
+        action = "benchmark_sell_stop" if hit_trailing_stop else "benchmark_sell_sma200"
+        state.update({
+            "position_open": False,
+            "shares": 0.0,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "highest_high_since_entry": None,
+            "waiting_for_pullback": False,
+            "last_profit_sell_price": None,
+            "profit_exit_date": None,
+            "last_action": action,
+        })
+        state_changed = True
+    elif position_open and hit_profit_target:
+        cash += shares * current_price
+        action = "benchmark_profit_exit_20"
+        state.update({
+            "position_open": False,
+            "shares": 0.0,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "highest_high_since_entry": None,
+            "waiting_for_pullback": True,
+            "last_profit_sell_price": round(current_price, 4),
+            "profit_exit_date": current_date,
+            "last_action": action,
+        })
+        state_changed = True
+    elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal):
+        buy_cash = cash
+        buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
+        if buy_shares > 0:
+            action = "benchmark_buy_sma200"
+            if hit_rebuy_pullback:
+                action = "benchmark_buy_pullback"
+            elif hit_rebuy_timeout:
+                action = "benchmark_buy_timeout"
+            state.update({
+                "position_open": True,
+                "entry_date": current_date,
+                "avg_cost": round(current_price, 4),
+                "shares": round(buy_shares, 6),
+                "cash": 0.0,
+                "highest_high_since_entry": round(current_high, 4),
+                "waiting_for_pullback": False,
+                "last_profit_sell_price": None,
+                "profit_exit_date": None,
+                "last_action": action,
+            })
+            state_changed = True
+
+    state.update(clear_manual_exit_fields())
+    if state_changed:
+        save_bot_strategy_state(state)
+
+    position_open = bool(state["position_open"])
+    shares = float(state["shares"])
+    avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
+    cash = float(state.get("cash", 0.0))
+    waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
+    last_profit_sell_price = state.get("last_profit_sell_price")
+    last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
+    position_value = shares * current_price
+    total_value = cash + position_value
+    benchmark_status = "In position" if position_open else "Waiting for swing re-entry" if waiting_for_pullback else "Waiting for re-entry"
+    next_profit_target = avg_cost * (1 + SWING_PROFIT_TARGET_PCT) if position_open and avg_cost else None
+    rebuy_target = last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT) if waiting_for_pullback and last_profit_sell_price else None
+
+    return {
+        "action": action,
+        "cash": cash,
+        "position_open": position_open,
+        "shares": shares,
+        "status": benchmark_status,
+        "total_value": total_value,
+        "next_profit_target": next_profit_target,
+        "rebuy_target": rebuy_target,
+    }
+
+
 def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     state = load_state()
     ticker = fetch_market_data()
+    bot_strategy = update_bot_strategy_benchmark(ticker)
 
     current_price = float(ticker["Close"].iloc[-1])
     current_high = float(ticker["High"].iloc[-1])
@@ -718,6 +874,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         position_status = "Waiting for re-entry"
     risk_context_lines = build_risk_context(ticker, current_price, sma200, trailing_stop)
     price_source = ticker.attrs.get("price_source", "daily")
+    strategy_gap = total_value - bot_strategy["total_value"]
+    strategy_gap_pct = (strategy_gap / bot_strategy["total_value"]) * 100 if bot_strategy["total_value"] else 0.0
 
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
@@ -773,6 +931,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"💼 Value:        ${position_value:.2f}",
             f"📊 Total:        ${total_value:.2f}",
             f"{pnl_emoji} P&L:          ${pnl:+.2f} ({pnl_pct:+.2f}%)",
+            "─" * 30,
+            "🧪 Bot-Only Benchmark",
+            f"Mode:          {bot_strategy['status']}",
+            f"📊 Total:        ${bot_strategy['total_value']:.2f}",
+            f"Vs Real Path:   ${strategy_gap:+.2f} ({strategy_gap_pct:+.2f}%)",
             "─" * 30,
             f"Entry Date:      {state.get('entry_date') or 'Waiting for entry'}",
         ])

@@ -111,6 +111,25 @@ Meaning:
 
 If real trades are made manually, `position_state.json` must match reality.
 
+### Bot-Only Benchmark
+
+The repo also keeps `bot_strategy_state.json`. This file tracks a paper benchmark:
+
+> What would have happened if Alon only followed the bot strategy and made no manual moves?
+
+This benchmark started from the same original position:
+
+- Entry date: `2026-04-29`
+- Shares: `40.4647`
+- Average cost: `$61.54`
+
+Unlike `position_state.json`, this file ignores manual/panic sells. It only follows the deterministic bot rules: +20% profit exit, 25% trailing stop, SMA200 exit, and the strategy's own re-entry rules.
+
+Daily reports include a `Bot-Only Benchmark` section with the benchmark total and the difference versus the real path. At month-end, compare:
+
+- Real path: `position_state.json`
+- Bot-only path: `bot_strategy_state.json`
+
 ### Scheduling
 
 GitHub's native scheduled workflow was removed because it was unreliable. The current scheduler is a Cloudflare Worker.
@@ -179,6 +198,7 @@ Failure alerts:
 
 - `script.py` - main strategy, Telegram messages, market calendar, and state updates.
 - `position_state.json` - live position state.
+- `bot_strategy_state.json` - paper benchmark for the no-manual-moves bot strategy.
 - `.github/workflows/main.yml` - GitHub Action that runs the bot.
 - `scheduler/cloudflare/worker.js` - external scheduler that triggers GitHub.
 - `scheduler/cloudflare/wrangler.toml` - Cloudflare cron configuration.
@@ -206,7 +226,8 @@ Failure alerts:
 5. Review whether any buy, sell, or profit-taking alerts were sent.
 6. Compare bot-reported price, SMA200, trailing stop, and next profit target against current market data.
 7. If a manual/panic sell happened, confirm manual safety mode has the correct manual sell price and re-buy target.
-8. Decide whether to keep the current strategy unchanged for another month.
+8. Compare `position_state.json` against `bot_strategy_state.json` to see whether manual behavior helped or hurt versus only following the bot.
+9. Decide whether to keep the current strategy unchanged for another month.
 
 ### Do Not Change Lightly
 
@@ -331,6 +352,25 @@ Possible future improvements, only if needed:
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.
 
+### השוואת Bot-Only
+
+הריפו שומר גם את `bot_strategy_state.json`. הקובץ הזה עוקב אחרי בנצ'מרק על הנייר:
+
+> מה היה קורה אם אלון היה עושה רק את מה שהבוט אומר, בלי פעולות ידניות?
+
+הבנצ'מרק התחיל מאותה פוזיציה מקורית:
+
+- תאריך כניסה: `2026-04-29`
+- מניות: `40.4647`
+- מחיר ממוצע: `$61.54`
+
+בניגוד ל-`position_state.json`, הקובץ הזה מתעלם ממכירות ידניות/פאניקה. הוא עוקב רק אחרי חוקי הבוט הדטרמיניסטיים: יציאת רווח ב-+20%, טריילינג סטופ של 25%, יציאת SMA200, וכללי הכניסה מחדש של האסטרטגיה.
+
+בדוחות היומיים מופיע אזור `Bot-Only Benchmark` עם הערך של הבנצ'מרק וההפרש מול המסלול האמיתי. בסוף החודש נשווה:
+
+- מסלול אמיתי: `position_state.json`
+- מסלול בוט בלבד: `bot_strategy_state.json`
+
 ### תזמון
 
 התזמון המקורי של GitHub Actions הוסר כי הוא לא היה אמין מספיק. התזמון הנוכחי מתבצע דרך Cloudflare Worker.
@@ -399,6 +439,7 @@ Worker:
 
 - `script.py` - האסטרטגיה הראשית, הודעות טלגרם, לוח מסחר, ועדכוני מצב.
 - `position_state.json` - מצב הפוזיציה החי.
+- `bot_strategy_state.json` - בנצ'מרק על הנייר לאסטרטגיית הבוט בלי פעולות ידניות.
 - `.github/workflows/main.yml` - GitHub Action שמריץ את הבוט.
 - `scheduler/cloudflare/worker.js` - הסקדולר החיצוני שמפעיל את GitHub.
 - `scheduler/cloudflare/wrangler.toml` - הגדרות התזמון של Cloudflare.
@@ -423,7 +464,8 @@ Worker:
 5. לבדוק אם נשלחו איתותי קנייה, מכירה, או לקיחת רווח.
 6. להשוות את המחיר, SMA200, הטריילינג סטופ ויעד הרווח הבא לנתוני שוק עדכניים.
 7. אם הייתה מכירה ידנית/פאניקה, לוודא שמצב הבטיחות הידני שמר את מחיר המכירה ואת יעד הכניסה מחדש הנכון.
-8. להחליט האם להשאיר את האסטרטגיה ללא שינוי לחודש נוסף.
+8. להשוות בין `position_state.json` לבין `bot_strategy_state.json` כדי להבין אם ההתנהלות הידנית עזרה או פגעה ביחס לביצוע מדויק של הוראות הבוט.
+9. להחליט האם להשאיר את האסטרטגיה ללא שינוי לחודש נוסף.
 
 ### לא לשנות בקלות
 

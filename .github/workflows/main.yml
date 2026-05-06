@@ -52,14 +52,14 @@ jobs:
         run: python script.py "${RUN_MODE:-auto}"
       - name: Save position state
         run: |
-          if git diff --quiet -- position_state.json; then
+          if git diff --quiet -- position_state.json bot_strategy_state.json; then
             echo "No position state changes."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add position_state.json
+          git add position_state.json bot_strategy_state.json
           git commit -m "Update position state"
           git push
       - name: Alert on workflow failure

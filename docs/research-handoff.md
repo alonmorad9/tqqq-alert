@@ -74,6 +74,22 @@ Current implied levels:
 - No active trailing stop while out of position.
 - No active profit target while out of position.
 
+## Bot-Only Benchmark
+
+A separate file, `bot_strategy_state.json`, tracks the paper benchmark for the original bot-only behavior:
+
+- It starts from the same original TQQQ position.
+- It ignores manual/panic sells.
+- It follows only deterministic bot strategy rules.
+- It is updated during normal bot checks.
+
+Use this at month-end to compare:
+
+- Real/manual path: `position_state.json`
+- Bot-only path: `bot_strategy_state.json`
+
+The daily Telegram report includes a `Bot-Only Benchmark` section with total value and the gap versus the real path.
+
 ## Scheduling And Data
 
 Scheduler:

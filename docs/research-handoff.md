@@ -1,6 +1,6 @@
 # TQQQ Strategy Research Handoff
 
-Last updated: 2026-05-05
+Last updated: 2026-05-07
 
 ## Purpose
 
@@ -17,7 +17,8 @@ Asset:
 
 Entry:
 
-- Buy/re-enter when TQQQ crosses above its 200-day simple moving average (`SMA200`).
+- Normal trend entry is a TQQQ cross above its 200-day simple moving average (`SMA200`).
+- After an early-warning exit, re-enter when TQQQ is back above both `SMA200` and `SMA20`.
 
 Full exit:
 
@@ -39,6 +40,16 @@ Swing profit cycle:
 - After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
 - After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
+Early-warning exit layer:
+
+- Sell all if at least 3 of these 5 warning signs are active:
+  - VIX >= 25.
+  - VIX 5-day increase >= 25%.
+  - QQQ below EMA21.
+  - TQQQ below SMA50.
+  - TQQQ RSI14 falling after being at or above 70.
+- This layer was added on 2026-05-06 after a local historical search showed better return and drawdown than the local swing baseline.
+
 Manual safety mode:
 
 - Optional GitHub Actions manual mode: `manual_sold`.
@@ -55,22 +66,27 @@ Current tracked real position state:
 {
   "avg_cost": null,
   "cash": 2726.11,
+  "early_exit_date": "2026-05-05",
+  "early_exit_price": 67.37,
   "entry_date": null,
   "highest_high_since_entry": null,
   "last_profit_sell_price": null,
-  "manual_exit_mode": true,
-  "manual_exit_price": 67.37,
+  "last_action": "strategy_switched_to_early_warning_cash",
+  "manual_exit_mode": false,
+  "manual_exit_price": null,
   "position_open": false,
   "profit_exit_date": null,
   "shares": 0.0,
   "ticker": "TQQQ",
+  "waiting_for_early_reentry": true,
   "waiting_for_pullback": false
 }
 ```
 
 Current implied levels:
 
-- Manual re-buy pullback: about `$62.32`
+- Manual safety mode is not active.
+- Re-buy condition from the current cash state: TQQQ above `SMA200` and `SMA20`.
 - No active trailing stop while out of position.
 - No active profit target while out of position.
 

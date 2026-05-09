@@ -563,6 +563,7 @@ def build_risk_context(ticker, current_price, sma200, trailing_stop):
     notes = ", ".join(risk_notes) if risk_notes else "no major warning"
     return [
         "🧭 Risk Context: advisory only",
+        "What it means: market health notes only; this section does not buy/sell by itself.",
         f"Trend:         {trend}",
         f"Momentum:      {momentum} (RSI14 {rsi14:.1f})",
         f"ATR14:         ${atr14:.2f} ({atr_pct:.1f}% daily range)",
@@ -575,6 +576,7 @@ def build_early_warning_lines(early_warning):
     active = ", ".join(early_warning["active"]) if early_warning["active"] else "none"
     return [
         "🔮 Early Drop Risk",
+        "What it means: can trigger an early sell only while a normal TQQQ position is open.",
         f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active)",
         f"Active:        {active}",
         f"VIX:           {early_warning['vix']:.2f} ({early_warning['vix_ret5']:+.1%} over 5d)",
@@ -1089,6 +1091,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "─" * 30,
             *build_early_warning_lines(early_warning),
         ])
+        if manual_exit_mode:
+            lines.append("Current controller: manual safety mode; re-buy waits for manual pullback or SMA200 reset.")
+        elif waiting_for_early_reentry:
+            lines.append("Current controller: early-risk recovery; re-buy waits for TQQQ above SMA200 and SMA20.")
         lines.extend([
             "─" * 30,
             f"📦 Shares:       {shares:.4f}",

@@ -353,4 +353,6 @@ The real account is currently in cash after the 2026-05-05 manual sell. Manual s
 
 On 2026-05-12, extra variants were tested from 2010-11-24 through 2026-05-12. The RSI14 <= 60 re-entry guard reduced historical max drawdown from -46.1% to -26.0% while keeping the final multiple close to the previous winner: 82.1x vs 85.8x. This guard was added because the real account is currently in cash and TQQQ is stretched.
 
+Parabolic stretch exits were also checked. TQQQ 5-day return >= 25% and 10-day return >= 30% improved the backtest when used as sell rules, but each fired only once in more than 15 years. They were added to the Telegram report as advisory-only warnings, not automatic sell rules.
+
 The current TQQQ strategy is more active than the previous versions. Watch the next month for whether the early-warning layer creates too many false exits during strong trends.

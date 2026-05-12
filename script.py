@@ -25,6 +25,8 @@ EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
 REENTRY_RSI_MAX = 60
+PARABOLIC_RET5_WARNING_PCT = 0.25
+PARABOLIC_RET10_WARNING_PCT = 0.30
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -370,6 +372,8 @@ def fetch_market_data():
     ticker["SMA50"] = ticker["Close"].rolling(window=50).mean()
     ticker["SMA60"] = ticker["Close"].rolling(window=60).mean()
     ticker["RSI14"] = calculate_rsi(ticker["Close"], 14)
+    ticker["RET5"] = ticker["Close"].pct_change(5)
+    ticker["RET10"] = ticker["Close"].pct_change(10)
     qqq["EMA21"] = qqq["Close"].ewm(span=21, adjust=False).mean()
     qqq["EMA50"] = qqq["Close"].ewm(span=50, adjust=False).mean()
     vix["RET5"] = vix["Close"].pct_change(5)
@@ -384,7 +388,7 @@ def fetch_market_data():
     qqq_signal = qqq[["Close", "EMA21", "EMA50"]].add_prefix("QQQ_")
     vix_signal = vix[["Close", "RET5"]].add_prefix("VIX_")
     ticker = ticker.join(qqq_signal, how="left").join(vix_signal, how="left").ffill()
-    ticker = ticker.dropna(subset=["SMA200", "SMA20", "SMA50", "RSI14", "QQQ_Close", "QQQ_EMA21", "VIX_Close", "VIX_RET5"])
+    ticker = ticker.dropna(subset=["SMA200", "SMA20", "SMA50", "RSI14", "RET5", "RET10", "QQQ_Close", "QQQ_EMA21", "VIX_Close", "VIX_RET5"])
     ticker.attrs["price_source"] = live_source
     ticker.attrs["qqq_price_source"] = qqq_live_source
     ticker.attrs["vix_price_source"] = vix_live_source
@@ -582,6 +586,27 @@ def build_early_warning_lines(early_warning):
         f"Active:        {active}",
         f"VIX:           {early_warning['vix']:.2f} ({early_warning['vix_ret5']:+.1%} over 5d)",
         f"QQQ vs EMA21:  ${early_warning['qqq_close']:.2f} / ${early_warning['qqq_ema21']:.2f}",
+    ]
+
+
+def build_parabolic_warning_lines(ticker):
+    row = ticker.iloc[-1]
+    ret5 = float(row["RET5"])
+    ret10 = float(row["RET10"])
+    active = []
+    if ret5 >= PARABOLIC_RET5_WARNING_PCT:
+        active.append(f"5d return {ret5:+.1%}")
+    if ret10 >= PARABOLIC_RET10_WARNING_PCT:
+        active.append(f"10d return {ret10:+.1%}")
+
+    level = "Watch" if active else "Low"
+    active_text = ", ".join(active) if active else "none"
+    return [
+        "⚡ Parabolic Stretch",
+        "What it means: advisory only; historically rare spike warnings, not automatic sell rules.",
+        f"Level:         {level}",
+        f"Active:        {active_text}",
+        f"5d / 10d Ret:  {ret5:+.1%} / {ret10:+.1%}",
     ]
 
 
@@ -1123,6 +1148,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         lines.extend([
             "─" * 30,
             *risk_context_lines,
+            "─" * 30,
+            *build_parabolic_warning_lines(ticker),
             "─" * 30,
             *build_early_warning_lines(early_warning),
         ])

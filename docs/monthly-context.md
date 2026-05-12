@@ -28,6 +28,11 @@ The current strategy is a high-risk/high-reward TQQQ swing strategy with an opti
 
 There is no separate 5% hard stop anymore.
 
+The daily Telegram report also includes an advisory-only parabolic stretch warning. It does not trigger automatic sells. It flags rare spike conditions that historically sometimes led to useful manual profit exits:
+
+- TQQQ 5-trading-day return at or above 25%.
+- TQQQ 10-trading-day return at or above 30%.
+
 The early-warning sell model checks five signals:
 
 - VIX is at or above 25.
@@ -105,6 +110,8 @@ On 2026-05-12, extra re-entry guard variants were tested from 2010-11-24 through
 | Add RSI14 <= 60 re-entry guard | 82.1x | 33.0% | -26.0% | 116 |
 
 Decision: add the RSI14 <= 60 re-entry guard. It gave up only a small amount of historical return while cutting historical max drawdown dramatically. It is especially relevant when TQQQ is very stretched and the real account is in cash.
+
+Also on 2026-05-12, parabolic stretch exits were checked. The 5-day >= 25% and 10-day >= 30% rules improved the historical result in isolation, but each fired only once in more than 15 years. Decision: do not make them automatic sell rules yet. Add them to the Telegram report as advisory warnings only, so a human can decide whether to manually take profit during an unusually sharp spike.
 
 ### Current Position State
 
@@ -304,6 +311,11 @@ Possible future improvements, only if needed:
 
 אין יותר סטופ קשיח נפרד של 5%.
 
+בדוח היומי לטלגרם יש גם אזהרת parabolic stretch לצורך מידע בלבד. היא לא גורמת למכירה אוטומטית. היא מסמנת מצבי זינוק נדירים שבהיסטוריה לפעמים עזרו כנקודת יציאה ידנית:
+
+- תשואת TQQQ ב-5 ימי מסחר שווה או מעל 25%.
+- תשואת TQQQ ב-10 ימי מסחר שווה או מעל 30%.
+
 מודל המכירה המוקדמת בודק חמישה סימנים:
 
 - VIX שווה או מעל 25.
@@ -381,6 +393,8 @@ Possible future improvements, only if needed:
 | הוספת כלל כניסה RSI14 <= 60 | 82.1x | 33.0% | -26.0% | 116 |
 
 החלטה: להוסיף את כלל הכניסה RSI14 <= 60. הוויתור ההיסטורי בתשואה היה קטן, אבל הירידה המקסימלית ההיסטורית ירדה משמעותית. זה רלוונטי במיוחד כש-TQQQ מתוחה מאוד והחשבון האמיתי במזומן.
+
+גם ב-2026-05-12 נבדקו יציאות בגלל parabolic stretch. כללי 5 ימים >= 25% ו-10 ימים >= 30% שיפרו את התוצאה ההיסטורית בנפרד, אבל כל אחד הופעל רק פעם אחת ביותר מ-15 שנה. החלטה: לא להפוך אותם לכללי מכירה אוטומטיים עדיין. להוסיף אותם לדוח הטלגרם כאזהרות מידע בלבד, כדי שהאדם יוכל להחליט אם לממש ידנית בזמן זינוק חריג מאוד.
 
 ### מצב הפוזיציה הנוכחי
 

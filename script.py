@@ -24,6 +24,7 @@ SWING_REBUY_TIMEOUT_DAYS = 20
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
+REENTRY_RSI_MAX = 60
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -593,6 +594,8 @@ def update_bot_strategy_benchmark(ticker):
     prev_price = float(ticker["Close"].iloc[-2])
     prev_sma200 = float(ticker["SMA200"].iloc[-2])
     current_date = ticker.index[-1].strftime("%Y-%m-%d")
+    current_rsi = float(ticker["RSI14"].iloc[-1])
+    reentry_rsi_ok = current_rsi <= REENTRY_RSI_MAX
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
@@ -635,9 +638,16 @@ def update_bot_strategy_benchmark(ticker):
         and current_price <= last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT)
     )
     hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
-    hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma
-    hit_early_reentry_signal = waiting_for_early_reentry and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1])
-    hit_fresh_buy_signal = (crossed_above_sma or (not state.get("last_action") and above_sma)) and not waiting_for_pullback and not waiting_for_early_reentry
+    hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok
+    hit_early_reentry_signal = (
+        waiting_for_early_reentry
+        and current_price > sma200
+        and current_price > float(ticker["SMA20"].iloc[-1])
+        and reentry_rsi_ok
+    )
+    hit_fresh_buy_signal = (
+        crossed_above_sma or (not state.get("last_action") and above_sma)
+    ) and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
 
     if position_open and (hit_trailing_stop or crossed_below_sma):
         cash += shares * current_price
@@ -752,6 +762,7 @@ def update_bot_strategy_benchmark(ticker):
         "next_profit_target": next_profit_target,
         "rebuy_target": rebuy_target,
         "early_warning": early_warning,
+        "reentry_rsi_ok": reentry_rsi_ok,
     }
 
 
@@ -763,6 +774,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     current_price = float(ticker["Close"].iloc[-1])
     current_high = float(ticker["High"].iloc[-1])
     sma200 = float(ticker["SMA200"].iloc[-1])
+    current_rsi = float(ticker["RSI14"].iloc[-1])
+    reentry_rsi_ok = current_rsi <= REENTRY_RSI_MAX
     prev_price = float(ticker["Close"].iloc[-2])
     prev_sma200 = float(ticker["SMA200"].iloc[-2])
 
@@ -821,18 +834,35 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         and current_price <= last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT)
     )
     hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
-    hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma
+    hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok
     hit_manual_rebuy_pullback = (
         manual_exit_mode
         and manual_exit_price is not None
         and current_price <= manual_exit_price * (1 - SWING_REBUY_DROP_PCT)
     )
     hit_manual_rebuy_reset = manual_exit_mode and manual_exit_saw_below_sma and crossed_above_sma
-    hit_manual_rebuy_signal = (hit_manual_rebuy_pullback or hit_manual_rebuy_reset) and above_sma
-    hit_early_reentry_signal = waiting_for_early_reentry and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1])
+    hit_manual_rebuy_signal = (hit_manual_rebuy_pullback or hit_manual_rebuy_reset) and above_sma and reentry_rsi_ok
+    hit_early_reentry_signal = (
+        waiting_for_early_reentry
+        and current_price > sma200
+        and current_price > float(ticker["SMA20"].iloc[-1])
+        and reentry_rsi_ok
+    )
     hit_fresh_buy_signal = (
         crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
-    ) and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode
+    ) and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode and reentry_rsi_ok
+
+    raw_reentry_trigger = (
+        ((hit_rebuy_pullback or hit_rebuy_timeout) and above_sma)
+        or ((hit_manual_rebuy_pullback or hit_manual_rebuy_reset) and above_sma)
+        or (waiting_for_early_reentry and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
+        or (
+            (crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1])))
+            and not waiting_for_pullback
+            and not waiting_for_early_reentry
+            and not manual_exit_mode
+        )
+    )
 
     action = None
     instruction_lines = []
@@ -983,6 +1013,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             instruction_lines.append("No tracked cash is available; update position_state.json after buying.")
     elif position_open and trailing_stop is not None and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
+    elif raw_reentry_trigger and not reentry_rsi_ok:
+        action = f"⏳ WAIT — Re-entry blocked until RSI <= {REENTRY_RSI_MAX}"
     elif waiting_for_pullback:
         action = "⏳ WAIT — Waiting for pullback or timeout re-entry"
     elif waiting_for_early_reentry:
@@ -1085,6 +1117,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🧯 Manual Re-buy: ${manual_rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from manual exit)")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset:    {reset_status}")
+        if not position_open:
+            rsi_status = "ready" if reentry_rsi_ok else "too hot"
+            lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({rsi_status})")
         lines.extend([
             "─" * 30,
             *risk_context_lines,
@@ -1092,9 +1127,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             *build_early_warning_lines(early_warning),
         ])
         if manual_exit_mode:
-            lines.append("Current controller: manual safety mode; re-buy waits for manual pullback or SMA200 reset.")
+            lines.append(f"Current controller: manual safety mode; re-buy waits for manual pullback or SMA200 reset, plus RSI <= {REENTRY_RSI_MAX}.")
         elif waiting_for_early_reentry:
-            lines.append("Current controller: early-risk recovery; re-buy waits for TQQQ above SMA200 and SMA20.")
+            lines.append(f"Current controller: early-risk recovery; re-buy waits for TQQQ above SMA200 and SMA20, plus RSI <= {REENTRY_RSI_MAX}.")
         lines.extend([
             "─" * 30,
             f"📦 Shares:       {shares:.4f}",
@@ -1145,7 +1180,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset: {reset_status}")
         if waiting_for_early_reentry:
-            lines.append("🔮 Early Re-buy: above SMA200 and SMA20")
+            lines.append(f"🔮 Early Re-buy: above SMA200 and SMA20, RSI <= {REENTRY_RSI_MAX}")
+        if not position_open:
+            lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",

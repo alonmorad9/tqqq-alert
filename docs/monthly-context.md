@@ -1,6 +1,6 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-05-06
+Last updated: 2026-05-12
 
 ## English
 
@@ -23,7 +23,8 @@ The current strategy is a high-risk/high-reward TQQQ swing strategy with an opti
 7. Sell all early if the optimized early-drop risk model reaches 3 active warning signs.
 8. After an early-warning exit, re-buy only when TQQQ is back above both SMA200 and SMA20.
 9. After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
-10. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
+10. Every fresh buy or re-buy also requires TQQQ RSI14 to be at or below 60. This avoids chasing stretched rallies.
+11. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
 There is no separate 5% hard stop anymore.
 
@@ -41,6 +42,8 @@ Manual safety mode is optional and does not run unless triggered manually from G
 
 - A 7.5% pullback from the manual sell price while TQQQ is still above SMA200.
 - Or a full SMA200 reset: price goes below SMA200 first, then later crosses back above SMA200.
+
+The RSI14 re-entry guard still applies in manual safety mode. Even if the manual pullback or SMA200 reset is ready, the bot waits until RSI14 is 60 or lower before sending a re-buy instruction.
 
 The trailing stop is now:
 
@@ -94,30 +97,39 @@ On 2026-05-06, an early-warning strategy search was run from 2010-11-24 through 
 
 Decision: switch the live bot to the best-return early-warning version because the real position is currently in cash. This is more active and may create more alerts, but historically it improved both final return and drawdown in the 2026-05-06 test.
 
+On 2026-05-12, extra re-entry guard variants were tested from 2010-11-24 through 2026-05-12. The best practical improvement was to keep the same exit rules but require RSI14 <= 60 before any fresh buy or re-buy:
+
+| Strategy | Final Multiple | CAGR | Max Drawdown | Trades |
+| --- | ---: | ---: | ---: | ---: |
+| Current early-warning strategy before RSI guard | 85.8x | 33.4% | -46.1% | 240 |
+| Add RSI14 <= 60 re-entry guard | 82.1x | 33.0% | -26.0% | 116 |
+
+Decision: add the RSI14 <= 60 re-entry guard. It gave up only a small amount of historical return while cutting historical max drawdown dramatically. It is especially relevant when TQQQ is very stretched and the real account is in cash.
+
 ### Current Position State
 
 The live state is stored in `position_state.json`.
 
-Current live state as of 2026-05-06 after switching to the early-warning strategy while in cash:
+Current live state as of 2026-05-12 after the manual sell while in cash:
 
 ```json
 {
   "avg_cost": null,
   "cash": 2726.11,
-  "early_exit_date": "2026-05-05",
-  "early_exit_price": 67.37,
+  "early_exit_date": null,
+  "early_exit_price": null,
   "entry_date": null,
   "highest_high_since_entry": null,
-  "last_action": "strategy_switched_to_early_warning_cash",
-  "manual_exit_date": null,
-  "manual_exit_mode": false,
-  "manual_exit_price": null,
+  "last_action": "manual_sold",
+  "manual_exit_date": "2026-05-05",
+  "manual_exit_mode": true,
+  "manual_exit_price": 67.37,
   "manual_exit_saw_below_sma": false,
   "position_open": false,
   "profit_exit_date": null,
   "shares": 0.0,
   "ticker": "TQQQ",
-  "waiting_for_early_reentry": true,
+  "waiting_for_early_reentry": false,
   "waiting_for_pullback": false,
   "last_profit_sell_price": null
 }
@@ -128,9 +140,9 @@ Meaning:
 - The bot assumes there is no open TQQQ position.
 - The previous real position was manually sold at `$67.37`.
 - Tracked cash is `$2726.11`.
-- Manual safety mode is no longer active.
-- The bot is waiting for early-risk recovery.
-- Re-buy condition: TQQQ above SMA200 and SMA20.
+- Manual safety mode is active.
+- The bot waits for the manual pullback target or SMA200 reset.
+- Re-buy also requires RSI14 <= 60.
 
 If real trades are made manually, `position_state.json` must match reality.
 
@@ -287,7 +299,8 @@ Possible future improvements, only if needed:
 7. למכור הכל מוקדם אם מודל הסיכון המוקדם מגיע ל-3 סימני אזהרה פעילים.
 8. אחרי יציאת early-warning, להיכנס מחדש רק כש-TQQQ חוזרת מעל SMA200 וגם מעל SMA20.
 9. אחרי יציאה בגלל סטופ או SMA200, לא משתמשים בכלל ה-pullback; מחכים לחצייה חדשה מעל SMA200.
-10. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
+10. כל קנייה חדשה או כניסה מחדש דורשת גם RSI14 של TQQQ שווה או נמוך מ-60. זה נועד למנוע כניסה אחרי ראלי מתוח מדי.
+11. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
 
 אין יותר סטופ קשיח נפרד של 5%.
 
@@ -305,6 +318,8 @@ Possible future improvements, only if needed:
 
 - ירידה של 7.5% ממחיר המכירה הידני, כל עוד TQQQ עדיין מעל SMA200.
 - או איפוס SMA200 מלא: המחיר יורד קודם מתחת ל-SMA200, ואז בהמשך חוצה בחזרה מעל SMA200.
+
+גם במצב בטיחות ידני כלל ה-RSI14 עדיין חל. גם אם יעד ה-pullback הידני או איפוס SMA200 מוכנים, הבוט יחכה עד ש-RSI14 יהיה 60 או נמוך יותר לפני שליחת הוראת קנייה מחדש.
 
 הטריילינג סטופ עכשיו הוא:
 
@@ -358,30 +373,39 @@ Possible future improvements, only if needed:
 
 החלטה: להעביר את הבוט החי לגרסת ה-early-warning עם התשואה הטובה ביותר, כי הפוזיציה האמיתית כרגע במזומן. זו גרסה אקטיבית יותר ועלולה לשלוח יותר התראות, אבל בבדיקה ההיסטורית של 2026-05-06 היא שיפרה גם תשואה וגם drawdown.
 
+ב-2026-05-12 נבדקו וריאציות נוספות של כניסה מחדש מ-2010-11-24 עד 2026-05-12. השיפור הפרקטי הכי טוב היה להשאיר את כללי היציאה כפי שהם, אבל לדרוש RSI14 <= 60 לפני כל קנייה חדשה או קנייה מחדש:
+
+| אסטרטגיה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית | עסקאות |
+| --- | ---: | ---: | ---: | ---: |
+| אסטרטגיית early-warning לפני כלל RSI | 85.8x | 33.4% | -46.1% | 240 |
+| הוספת כלל כניסה RSI14 <= 60 | 82.1x | 33.0% | -26.0% | 116 |
+
+החלטה: להוסיף את כלל הכניסה RSI14 <= 60. הוויתור ההיסטורי בתשואה היה קטן, אבל הירידה המקסימלית ההיסטורית ירדה משמעותית. זה רלוונטי במיוחד כש-TQQQ מתוחה מאוד והחשבון האמיתי במזומן.
+
 ### מצב הפוזיציה הנוכחי
 
 המצב החי נשמר בקובץ `position_state.json`.
 
-מצב חי נכון ל-2026-05-06 אחרי מעבר לאסטרטגיית early-warning בזמן שהחשבון במזומן:
+מצב חי נכון ל-2026-05-12 אחרי המכירה הידנית בזמן שהחשבון במזומן:
 
 ```json
 {
   "avg_cost": null,
   "cash": 2726.11,
-  "early_exit_date": "2026-05-05",
-  "early_exit_price": 67.37,
+  "early_exit_date": null,
+  "early_exit_price": null,
   "entry_date": null,
   "highest_high_since_entry": null,
-  "last_action": "strategy_switched_to_early_warning_cash",
-  "manual_exit_date": null,
-  "manual_exit_mode": false,
-  "manual_exit_price": null,
+  "last_action": "manual_sold",
+  "manual_exit_date": "2026-05-05",
+  "manual_exit_mode": true,
+  "manual_exit_price": 67.37,
   "manual_exit_saw_below_sma": false,
   "position_open": false,
   "profit_exit_date": null,
   "shares": 0.0,
   "ticker": "TQQQ",
-  "waiting_for_early_reentry": true,
+  "waiting_for_early_reentry": false,
   "waiting_for_pullback": false,
   "last_profit_sell_price": null
 }
@@ -392,9 +416,9 @@ Possible future improvements, only if needed:
 - הבוט מניח שאין פוזיציה פתוחה ב-TQQQ.
 - הפוזיציה האמיתית הקודמת נמכרה ידנית במחיר `$67.37`.
 - המזומן במעקב הוא `$2726.11`.
-- מצב בטיחות ידני כבר לא פעיל.
-- הבוט מחכה להתאוששות מסיכון מוקדם.
-- תנאי כניסה מחדש: TQQQ מעל SMA200 וגם מעל SMA20.
+- מצב בטיחות ידני פעיל.
+- הבוט מחכה ליעד ה-pullback הידני או לאיפוס SMA200.
+- קנייה מחדש דורשת גם RSI14 <= 60.
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.
 

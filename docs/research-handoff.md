@@ -1,6 +1,6 @@
 # TQQQ Strategy Research Handoff
 
-Last updated: 2026-05-07
+Last updated: 2026-05-12
 
 ## Purpose
 
@@ -19,6 +19,7 @@ Entry:
 
 - Normal trend entry is a TQQQ cross above its 200-day simple moving average (`SMA200`).
 - After an early-warning exit, re-enter when TQQQ is back above both `SMA200` and `SMA20`.
+- Every fresh buy or re-buy also requires TQQQ `RSI14 <= 60` to avoid chasing stretched rallies.
 
 Full exit:
 
@@ -37,6 +38,7 @@ Swing profit cycle:
 - Sell all shares at +20% from the current entry price.
 - After a +20% profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
 - If the pullback does not happen within 20 trading days, re-buy anyway as long as TQQQ is still above SMA200.
+- Every swing re-buy also requires `RSI14 <= 60`.
 - After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
 - After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
@@ -59,6 +61,7 @@ Manual safety mode:
 - Re-buy after manual safety mode only when:
   - current price is at least 7.5% below the manual sell price and still above SMA200, or
   - price went below SMA200 after the manual exit and later crosses back above SMA200.
+- The `RSI14 <= 60` re-entry guard still applies to manual safety mode.
 
 Current tracked real position state:
 
@@ -66,27 +69,27 @@ Current tracked real position state:
 {
   "avg_cost": null,
   "cash": 2726.11,
-  "early_exit_date": "2026-05-05",
-  "early_exit_price": 67.37,
+  "early_exit_date": null,
+  "early_exit_price": null,
   "entry_date": null,
   "highest_high_since_entry": null,
   "last_profit_sell_price": null,
-  "last_action": "strategy_switched_to_early_warning_cash",
-  "manual_exit_mode": false,
-  "manual_exit_price": null,
+  "last_action": "manual_sold",
+  "manual_exit_mode": true,
+  "manual_exit_price": 67.37,
   "position_open": false,
   "profit_exit_date": null,
   "shares": 0.0,
   "ticker": "TQQQ",
-  "waiting_for_early_reentry": true,
+  "waiting_for_early_reentry": false,
   "waiting_for_pullback": false
 }
 ```
 
 Current implied levels:
 
-- Manual safety mode is not active.
-- Re-buy condition from the current cash state: TQQQ above `SMA200` and `SMA20`.
+- Manual safety mode is active.
+- Re-buy condition from the current cash state: manual pullback target or SMA200 reset, plus `RSI14 <= 60`.
 - No active trailing stop while out of position.
 - No active profit target while out of position.
 
@@ -329,7 +332,7 @@ Questions to answer:
 
 ## Current Recommendation
 
-The live TQQQ bot has been changed to the +20% swing profit cycle plus an optimized early-warning exit layer.
+The live TQQQ bot has been changed to the +20% swing profit cycle plus an optimized early-warning exit layer, with an RSI14 <= 60 guard on all fresh buys and re-buys.
 
 On 2026-05-06, an early-warning search tested TQQQ, QQQ, and VIX signals from 2010-11-24 through 2026-05-06. The selected live rule sells all when at least 3 of these 5 conditions are active:
 
@@ -346,6 +349,8 @@ Historical comparison in that local test:
 | Current swing baseline in this test | 36.7x | 26.3% | -49.5% | 164 | 0 |
 | Selected early-warning strategy | 85.8x | 33.4% | -46.1% | 240 | 49 |
 
-The real account is currently in cash after the 2026-05-05 manual sell. Manual safety mode was cleared, and `position_state.json` now waits for early-risk recovery: re-buy only when TQQQ is above SMA200 and SMA20.
+The real account is currently in cash after the 2026-05-05 manual sell. Manual safety mode is active, so the real path waits for the manual pullback target or SMA200 reset, plus RSI14 <= 60.
+
+On 2026-05-12, extra variants were tested from 2010-11-24 through 2026-05-12. The RSI14 <= 60 re-entry guard reduced historical max drawdown from -46.1% to -26.0% while keeping the final multiple close to the previous winner: 82.1x vs 85.8x. This guard was added because the real account is currently in cash and TQQQ is stretched.
 
 The current TQQQ strategy is more active than the previous versions. Watch the next month for whether the early-warning layer creates too many false exits during strong trends.

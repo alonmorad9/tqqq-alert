@@ -60,8 +60,9 @@ Manual safety mode:
 - It intentionally does not allow immediate re-buy just because TQQQ is above SMA200.
 - Re-buy after manual safety mode only when:
   - current price is at least 7.5% below the manual sell price and still above SMA200, or
-  - price went below SMA200 after the manual exit and later crosses back above SMA200.
-- The `RSI14 <= 60` re-entry guard still applies to manual safety mode.
+  - price went below SMA200 after the manual exit and later crosses back above SMA200, or
+  - 20 trading days passed and TQQQ is still above SMA200.
+- The `RSI14 <= 60` re-entry guard still applies to all manual safety re-entry paths.
 
 Current tracked real position state:
 
@@ -349,10 +350,12 @@ Historical comparison in that local test:
 | Current swing baseline in this test | 36.7x | 26.3% | -49.5% | 164 | 0 |
 | Selected early-warning strategy | 85.8x | 33.4% | -46.1% | 240 | 49 |
 
-The real account is currently in cash after the 2026-05-05 manual sell. Manual safety mode is active, so the real path waits for the manual pullback target or SMA200 reset, plus RSI14 <= 60.
+The real account is currently in cash after the 2026-05-05 manual sell. Manual safety mode is active, so the real path waits for the manual pullback target, SMA200 reset, or 20-trading-day timeout, plus RSI14 <= 60.
 
 On 2026-05-12, extra variants were tested from 2010-11-24 through 2026-05-12. The RSI14 <= 60 re-entry guard reduced historical max drawdown from -46.1% to -26.0% while keeping the final multiple close to the previous winner: 82.1x vs 85.8x. This guard was added because the real account is currently in cash and TQQQ is stretched.
 
 Parabolic stretch exits were also checked. TQQQ 5-day return >= 25% and 10-day return >= 30% improved the backtest when used as sell rules, but each fired only once in more than 15 years. They were added to the Telegram report as advisory-only warnings, not automatic sell rules.
+
+Manual safety re-entry was updated after checking strict manual, RSI-only, and hybrid timeout policies. The practical rule is strict first, then after 20 trading days allow re-entry above SMA200 if RSI14 <= 60. This is meant to avoid months in cash after a manual sell without allowing immediate chase-buying.
 
 The current TQQQ strategy is more active than the previous versions. Watch the next month for whether the early-warning layer creates too many false exits during strong trends.

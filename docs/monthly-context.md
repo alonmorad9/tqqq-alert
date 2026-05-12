@@ -47,8 +47,9 @@ Manual safety mode is optional and does not run unless triggered manually from G
 
 - A 7.5% pullback from the manual sell price while TQQQ is still above SMA200.
 - Or a full SMA200 reset: price goes below SMA200 first, then later crosses back above SMA200.
+- Or, after 20 trading days, a trend re-entry while TQQQ is still above SMA200.
 
-The RSI14 re-entry guard still applies in manual safety mode. Even if the manual pullback or SMA200 reset is ready, the bot waits until RSI14 is 60 or lower before sending a re-buy instruction.
+The RSI14 re-entry guard still applies in manual safety mode. Even if the manual pullback, SMA200 reset, or 20-day timeout is ready, the bot waits until RSI14 is 60 or lower before sending a re-buy instruction.
 
 The trailing stop is now:
 
@@ -112,6 +113,8 @@ On 2026-05-12, extra re-entry guard variants were tested from 2010-11-24 through
 Decision: add the RSI14 <= 60 re-entry guard. It gave up only a small amount of historical return while cutting historical max drawdown dramatically. It is especially relevant when TQQQ is very stretched and the real account is in cash.
 
 Also on 2026-05-12, parabolic stretch exits were checked. The 5-day >= 25% and 10-day >= 30% rules improved the historical result in isolation, but each fired only once in more than 15 years. Decision: do not make them automatic sell rules yet. Add them to the Telegram report as advisory warnings only, so a human can decide whether to manually take profit during an unusually sharp spike.
+
+Manual safety mode was also updated after testing strict manual re-entry, RSI-only re-entry, and hybrid timeout variants. The selected practical rule is: keep the strict manual pullback/reset first, but after 20 trading days allow re-entry above SMA200 if RSI14 <= 60. This avoids immediately chasing after a manual sell while reducing the risk of being stuck in cash for months.
 
 ### Current Position State
 
@@ -330,8 +333,9 @@ Possible future improvements, only if needed:
 
 - ירידה של 7.5% ממחיר המכירה הידני, כל עוד TQQQ עדיין מעל SMA200.
 - או איפוס SMA200 מלא: המחיר יורד קודם מתחת ל-SMA200, ואז בהמשך חוצה בחזרה מעל SMA200.
+- או, אחרי 20 ימי מסחר, כניסה מחדש לפי מגמה כל עוד TQQQ עדיין מעל SMA200.
 
-גם במצב בטיחות ידני כלל ה-RSI14 עדיין חל. גם אם יעד ה-pullback הידני או איפוס SMA200 מוכנים, הבוט יחכה עד ש-RSI14 יהיה 60 או נמוך יותר לפני שליחת הוראת קנייה מחדש.
+גם במצב בטיחות ידני כלל ה-RSI14 עדיין חל. גם אם יעד ה-pullback הידני, איפוס SMA200, או timeout של 20 ימי מסחר מוכנים, הבוט יחכה עד ש-RSI14 יהיה 60 או נמוך יותר לפני שליחת הוראת קנייה מחדש.
 
 הטריילינג סטופ עכשיו הוא:
 
@@ -395,6 +399,8 @@ Possible future improvements, only if needed:
 החלטה: להוסיף את כלל הכניסה RSI14 <= 60. הוויתור ההיסטורי בתשואה היה קטן, אבל הירידה המקסימלית ההיסטורית ירדה משמעותית. זה רלוונטי במיוחד כש-TQQQ מתוחה מאוד והחשבון האמיתי במזומן.
 
 גם ב-2026-05-12 נבדקו יציאות בגלל parabolic stretch. כללי 5 ימים >= 25% ו-10 ימים >= 30% שיפרו את התוצאה ההיסטורית בנפרד, אבל כל אחד הופעל רק פעם אחת ביותר מ-15 שנה. החלטה: לא להפוך אותם לכללי מכירה אוטומטיים עדיין. להוסיף אותם לדוח הטלגרם כאזהרות מידע בלבד, כדי שהאדם יוכל להחליט אם לממש ידנית בזמן זינוק חריג מאוד.
+
+מצב בטיחות ידני עודכן גם אחרי בדיקה של כניסה ידנית קשיחה, כניסה לפי RSI בלבד, וגרסאות timeout היברידיות. הכלל הפרקטי שנבחר: קודם לשמור על pullback/reset ידני קשיח, אבל אחרי 20 ימי מסחר לאפשר כניסה מחדש מעל SMA200 אם RSI14 <= 60. זה מונע קנייה מיידית אחרי מכירה ידנית, אבל מקטין את הסיכון להיתקע במזומן חודשים.
 
 ### מצב הפוזיציה הנוכחי
 

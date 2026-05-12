@@ -21,6 +21,7 @@ TRAILING_STOP_PCT = 0.25
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.075
 SWING_REBUY_TIMEOUT_DAYS = 20
+MANUAL_REBUY_TIMEOUT_DAYS = 20
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
@@ -817,6 +818,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     manual_exit_mode = bool(state.get("manual_exit_mode", False))
     manual_exit_price = state.get("manual_exit_price")
     manual_exit_price = float(manual_exit_price) if manual_exit_price is not None else None
+    manual_exit_date = state.get("manual_exit_date")
+    manual_wait_days = trading_days_since(manual_exit_date, ticker) if manual_exit_mode else 0
     manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
     state_changed = False
     state_dirty = False
@@ -866,7 +869,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         and current_price <= manual_exit_price * (1 - SWING_REBUY_DROP_PCT)
     )
     hit_manual_rebuy_reset = manual_exit_mode and manual_exit_saw_below_sma and crossed_above_sma
-    hit_manual_rebuy_signal = (hit_manual_rebuy_pullback or hit_manual_rebuy_reset) and above_sma and reentry_rsi_ok
+    hit_manual_rebuy_timeout = manual_exit_mode and manual_wait_days >= MANUAL_REBUY_TIMEOUT_DAYS and above_sma
+    hit_manual_rebuy_signal = (
+        hit_manual_rebuy_pullback or hit_manual_rebuy_reset or hit_manual_rebuy_timeout
+    ) and above_sma and reentry_rsi_ok
     hit_early_reentry_signal = (
         waiting_for_early_reentry
         and current_price > sma200
@@ -879,7 +885,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
 
     raw_reentry_trigger = (
         ((hit_rebuy_pullback or hit_rebuy_timeout) and above_sma)
-        or ((hit_manual_rebuy_pullback or hit_manual_rebuy_reset) and above_sma)
+        or ((hit_manual_rebuy_pullback or hit_manual_rebuy_reset or hit_manual_rebuy_timeout) and above_sma)
         or (waiting_for_early_reentry and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
         or (
             (crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1])))
@@ -1001,6 +1007,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             elif hit_manual_rebuy_reset:
                 buy_reason = "buy_manual_sma_reset"
                 action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
+            elif hit_manual_rebuy_timeout:
+                buy_reason = "buy_manual_timeout"
+                action = "🟢 RE-BUY SIGNAL — MANUAL TIMEOUT, TREND STILL OK"
             elif hit_early_reentry_signal:
                 buy_reason = "buy_early_risk_recovery"
                 action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
@@ -1033,6 +1042,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
             elif hit_manual_rebuy_reset:
                 action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
+            elif hit_manual_rebuy_timeout:
+                action = "🟢 RE-BUY SIGNAL — MANUAL TIMEOUT, TREND STILL OK"
             elif hit_early_reentry_signal:
                 action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
             instruction_lines.append("No tracked cash is available; update position_state.json after buying.")
@@ -1072,6 +1083,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     manual_exit_mode = bool(state.get("manual_exit_mode", False))
     manual_exit_price = state.get("manual_exit_price")
     manual_exit_price = float(manual_exit_price) if manual_exit_price is not None else None
+    manual_exit_date = state.get("manual_exit_date")
+    manual_wait_days = trading_days_since(manual_exit_date, ticker) if manual_exit_mode else 0
     manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
     highest_high_since_entry = state.get("highest_high_since_entry")
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
@@ -1140,6 +1153,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"⏳ Wait Days:    {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS} trading days")
         if manual_rebuy_target:
             lines.append(f"🧯 Manual Re-buy: ${manual_rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from manual exit)")
+            lines.append(f"⏳ Manual Wait:  {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS} trading days")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset:    {reset_status}")
         if not position_open:
@@ -1204,6 +1218,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"⏳ Wait Days:  {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
         if manual_rebuy_target:
             lines.append(f"🧯 Manual Re-buy: ${manual_rebuy_target:.2f}")
+            lines.append(f"⏳ Manual Wait: {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS}")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset: {reset_status}")
         if waiting_for_early_reentry:

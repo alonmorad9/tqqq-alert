@@ -710,7 +710,6 @@ def update_bot_strategy_benchmark(ticker):
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
     hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"])
-    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"])
     hit_profit_target = (
         position_open
         and shares > 0
@@ -942,6 +941,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
+    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"])
     hit_profit_target = (
         position_open
         and shares > 0

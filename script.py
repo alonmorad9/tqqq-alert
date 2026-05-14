@@ -1315,12 +1315,13 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.extend([
                 f"🅿️ {PARKING_TICKER} Shares: {parking_shares:.4f}",
                 f"🅿️ {PARKING_TICKER} Value:  ${parking_position_value:.2f}",
+                f"🅿️ {PARKING_TICKER} P&L:    ${parking_pnl:+.2f} ({parking_pnl_pct:+.2f}%)",
             ])
         lines.extend([
             f"🏦 Cash:         ${cash:.2f}",
-            f"💼 Value:        ${position_value:.2f}",
+            f"💼 TQQQ Value:   ${position_value:.2f}",
             f"📊 Total:        ${total_value:.2f}",
-            f"{pnl_emoji} P&L:          ${pnl:+.2f} ({pnl_pct:+.2f}%)",
+            f"{pnl_emoji} TQQQ P&L:     ${pnl:+.2f} ({pnl_pct:+.2f}%)",
             "─" * 30,
             "🧪 Bot-Only Benchmark",
             f"Mode:          {bot_strategy['status']}",
@@ -1368,6 +1369,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🅿️ Waiting Asset: {PARKING_TICKER} @ ${current_parking_price:.2f}")
             if parking_shares > 0:
                 lines.append(f"🅿️ {PARKING_TICKER}: {parking_shares:.4f} shares / ${parking_position_value:.2f}")
+                lines.append(f"🅿️ {PARKING_TICKER} P&L: ${parking_pnl:+.2f} ({parking_pnl_pct:+.2f}%)")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",

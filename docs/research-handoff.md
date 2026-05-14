@@ -85,7 +85,11 @@ Waiting asset:
 - Manual modes:
   - `manual_parking_bought` with `manual_price=<XLK buy price>` and optional `manual_shares=<XLK shares>`.
   - `manual_parking_sold` with `manual_price=<XLK sell price>`.
-- Bot-only benchmark behavior: automatically simulates XLK parking after bot exits TQQQ and returns to TQQQ on bot re-entry. This keeps the benchmark as a pure "follow the bot" path, not a manual path.
+- XLK sell rules:
+  - Sell XLK and move back to TQQQ when the normal TQQQ re-entry signal triggers.
+  - Sell XLK and wait in cash if TQQQ falls below SMA200.
+  - Sell XLK and wait in cash if the early-drop risk model reaches 3 active warning signs.
+- Bot-only benchmark behavior: automatically simulates XLK parking after bot exits TQQQ only if TQQQ is still above SMA200 and early-drop risk is not high. It returns to TQQQ on bot re-entry and moves XLK to cash if TQQQ becomes defensive. This keeps the benchmark as a pure "follow the bot" path, not a manual path.
 
 Current tracked real position state:
 

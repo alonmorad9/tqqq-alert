@@ -82,7 +82,13 @@ Flow:
 4. When the bot later sends a TQQQ re-entry signal, sell XLK manually and buy TQQQ manually.
 5. Run `manual_parking_sold`, then `manual_bought` with the actual TQQQ buy price.
 
-The bot-only benchmark behaves differently: it automatically simulates moving into XLK after bot exits and moving back into TQQQ on bot re-entry. This keeps the benchmark as "only follow bot rules, no manual decisions."
+XLK sell rules:
+
+- Sell XLK and move back to TQQQ when the normal TQQQ re-entry signal triggers.
+- Sell XLK and wait in cash if TQQQ falls below SMA200.
+- Sell XLK and wait in cash if the early-drop risk model reaches 3 active warning signs.
+
+The bot-only benchmark behaves differently: it automatically simulates moving into XLK after bot exits if TQQQ is still above SMA200 and early-drop risk is not high, moves from XLK back into TQQQ on bot re-entry, and moves from XLK to cash if TQQQ becomes defensive. This keeps the benchmark as "only follow bot rules, no manual decisions."
 
 The trailing stop is now:
 
@@ -418,7 +424,13 @@ Possible future improvements, only if needed:
 4. כשהבוט שולח בהמשך איתות כניסה ל-TQQQ, מוכרים XLK ידנית וקונים TQQQ ידנית.
 5. מריצים `manual_parking_sold`, ואז `manual_bought` עם מחיר הקנייה האמיתי של TQQQ.
 
-הבנצ'מרק של Bot-Only מתנהג אחרת: הוא מדמה אוטומטית מעבר ל-XLK אחרי יציאת בוט וחזרה ל-TQQQ באיתות הכניסה הבא. זה על הנייר בלבד ולא אומר שהחשבון האמיתי קנה XLK.
+כללי מכירה ל-XLK:
+
+- למכור XLK ולעבור בחזרה ל-TQQQ כשמופיע איתות כניסה רגיל ל-TQQQ.
+- למכור XLK ולהמתין במזומן אם TQQQ יורדת מתחת ל-SMA200.
+- למכור XLK ולהמתין במזומן אם מודל ה-early-drop risk מגיע ל-3 סימני אזהרה פעילים.
+
+הבנצ'מרק של Bot-Only מתנהג אחרת: הוא מדמה אוטומטית מעבר ל-XLK אחרי יציאת בוט אם TQQQ עדיין מעל SMA200 וסיכון early-drop לא גבוה, חזרה מ-XLK ל-TQQQ באיתות הכניסה הבא, ומעבר מ-XLK למזומן אם TQQQ נהיית דפנסיבית. זה על הנייר בלבד ולא אומר שהחשבון האמיתי קנה XLK.
 
 הטריילינג סטופ עכשיו הוא:
 

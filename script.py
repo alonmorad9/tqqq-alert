@@ -709,6 +709,8 @@ def update_bot_strategy_benchmark(ticker):
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
+    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"])
+    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"])
     hit_profit_target = (
         position_open
         and shares > 0
@@ -733,7 +735,12 @@ def update_bot_strategy_benchmark(ticker):
         crossed_above_sma or (not state.get("last_action") and above_sma)
     ) and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
 
-    if position_open and (hit_trailing_stop or crossed_below_sma):
+    if not position_open and hit_parking_defensive_exit:
+        cash = unpark_benchmark_to_cash(state, ticker, cash)
+        action = "benchmark_sell_xlk_defensive"
+        state["last_action"] = action
+        state_changed = True
+    elif position_open and (hit_trailing_stop or crossed_below_sma):
         cash += shares * current_price
         action = "benchmark_sell_stop" if hit_trailing_stop else "benchmark_sell_sma200"
         state.update({
@@ -822,7 +829,13 @@ def update_bot_strategy_benchmark(ticker):
             })
             state_changed = True
 
-    if not bool(state.get("position_open", False)) and float(state.get("cash", 0.0)) > 0 and float(state.get("parking_shares", 0.0)) <= 0:
+    can_hold_parking_asset = current_price > sma200 and not early_warning["hit"]
+    if (
+        not bool(state.get("position_open", False))
+        and can_hold_parking_asset
+        and float(state.get("cash", 0.0)) > 0
+        and float(state.get("parking_shares", 0.0)) <= 0
+    ):
         cash = park_cash_in_benchmark(state, ticker, float(state.get("cash", 0.0)))
         action = "benchmark_park_xlk" if action == "benchmark_hold" else action
         state_changed = True
@@ -983,7 +996,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     action = None
     instruction_lines = []
 
-    if position_open and hit_trailing_stop:
+    if not position_open and hit_parking_defensive_exit:
+        action = f"🅿️ SELL {PARKING_TICKER} — WAIT IN CASH"
+        if current_price < sma200:
+            instruction_lines.append(f"Reason: {TICKER} is below SMA200, so market-waiting exposure is no longer preferred.")
+        if early_warning["hit"]:
+            instruction_lines.append(f"Reason: early-drop risk is high ({', '.join(early_warning['active'])}).")
+        instruction_lines.append(f"Sell {PARKING_TICKER}: {parking_shares:.4f} shares")
+        instruction_lines.append(f"After selling, run manual_parking_sold with your actual {PARKING_TICKER} sell price.")
+    elif position_open and hit_trailing_stop:
         sell_shares = shares
         cash += sell_shares * current_price
         shares = 0.0
@@ -1167,6 +1188,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     is_signal = is_signal or (not position_open and hit_rebuy_signal)
     is_signal = is_signal or (not position_open and hit_manual_rebuy_signal)
     is_signal = is_signal or (not position_open and hit_early_reentry_signal)
+    is_signal = is_signal or hit_parking_defensive_exit
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])

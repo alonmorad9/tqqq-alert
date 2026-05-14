@@ -1,6 +1,6 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-05-12
+Last updated: 2026-05-14
 
 ## English
 
@@ -50,6 +50,39 @@ Manual safety mode is optional and does not run unless triggered manually from G
 - Or, after 20 trading days, a trend re-entry while TQQQ is still above SMA200.
 
 The RSI14 re-entry guard still applies in manual safety mode. Even if the manual pullback, SMA200 reset, or 20-day timeout is ready, the bot waits until RSI14 is 60 or lower before sending a re-buy instruction.
+
+### Waiting Asset While Out Of TQQQ
+
+On 2026-05-14, historical tests compared temporary "waiting assets" for periods when the bot is out of TQQQ and waiting for re-entry. `SGOV`/`BIL` were rejected because the expected short holding period is too small relative to broker/tax friction.
+
+Corrected test window: 2010-11-24 through 2026-05-13.
+
+| Waiting Asset | Final Multiple | CAGR | Max Drawdown | Interpretation |
+| --- | ---: | ---: | ---: | --- |
+| Cash | 38.2x | 26.6% | -47.7% | Missed too much upside |
+| QQQ | 134.8x | 37.3% | -45.7% | Good simple option |
+| XLK | 151.3x | 38.3% | -44.2% | Selected default waiting asset |
+| VGT | 148.1x | 38.1% | -44.9% | Very close to XLK |
+| SMH | 216.7x | 41.6% | -54.6% | More return, more risk |
+| QLD | 218.9x | 41.7% | -66.5% | Too leveraged for waiting mode |
+| USD | 308.2x | 44.9% | -79.0% | Too dangerous for waiting mode |
+
+Decision: use `XLK` as the preferred waiting asset when the bot is out of TQQQ but the human still wants large-cap tech exposure. The bot does not buy or sell XLK automatically for the real account. It only shows the suggested waiting asset and tracks it if manually recorded.
+
+Manual XLK tracking modes:
+
+- `manual_parking_bought` with `manual_price=<actual XLK buy price>` and optional `manual_shares=<actual XLK shares>`.
+- `manual_parking_sold` with `manual_price=<actual XLK sell price>`.
+
+Flow:
+
+1. If the bot exits TQQQ, sell TQQQ manually.
+2. If you want the waiting-asset plan, buy XLK manually.
+3. Run `manual_parking_bought` so the bot tracks XLK value in the real path.
+4. When the bot later sends a TQQQ re-entry signal, sell XLK manually and buy TQQQ manually.
+5. Run `manual_parking_sold`, then `manual_bought` with the actual TQQQ buy price.
+
+The bot-only benchmark behaves differently: it automatically simulates moving into XLK after bot exits and moving back into TQQQ on bot re-entry. This keeps the benchmark as "only follow bot rules, no manual decisions."
 
 The trailing stop is now:
 
@@ -131,6 +164,9 @@ Current live state as of 2026-05-12 after the manual sell while in cash:
   "entry_date": null,
   "highest_high_since_entry": null,
   "last_action": "manual_sold",
+  "parking_avg_cost": null,
+  "parking_shares": 0.0,
+  "parking_ticker": "XLK",
   "manual_exit_date": "2026-05-05",
   "manual_exit_mode": true,
   "manual_exit_price": 67.37,
@@ -169,6 +205,8 @@ This benchmark started from the same original position:
 - Average cost: `$61.54`
 
 Unlike `position_state.json`, this file ignores manual/panic sells. It only follows the deterministic bot rules: +20% profit exit, 25% trailing stop, SMA200 exit, and the strategy's own re-entry rules.
+
+As of 2026-05-14, the benchmark also simulates the selected waiting-asset behavior: after bot exits TQQQ, it parks the benchmark value in XLK until the next bot re-entry signal. This is paper-only and does not imply the real account bought XLK.
 
 Daily reports include a `Bot-Only Benchmark` section with the benchmark total and the difference versus the real path. At month-end, compare:
 
@@ -211,6 +249,17 @@ Manual safety mode is triggered only through GitHub Actions `workflow_dispatch`:
 
 This is not used by the Cloudflare scheduler.
 
+Manual XLK waiting-asset tracking is also triggered only through GitHub Actions `workflow_dispatch`:
+
+- `mode=manual_parking_bought`
+- `manual_price=<actual XLK buy price>`
+- optional `manual_shares=<actual XLK shares>`
+
+And when XLK is sold:
+
+- `mode=manual_parking_sold`
+- `manual_price=<actual XLK sell price>`
+
 Expected behavior:
 
 - Intraday checks happen every 10 minutes during NASDAQ trading hours.
@@ -231,6 +280,7 @@ Daily reports:
 
 - Send a full Telegram status message.
 - Include current price, SMA200, trailing stop, position mode, cash, shares, total value, P&L, next profit target, and pullback re-entry target if waiting after a profit exit.
+- If there is no open TQQQ position, include XLK waiting-asset guidance and any tracked XLK shares/value.
 - Include the price source. During market hours, the bot overlays Yahoo's latest 1-minute TQQQ bar on top of the daily history so it does not rely on yesterday's close. If the latest 1-minute price is stale by more than 30 minutes while the market is open, the run fails and sends a workflow-failure alert instead of trading on stale data.
 - Include an advisory risk context section inspired by the TradingAgents idea: trend, RSI momentum, ATR volatility, a 4x ATR reference stop, and risk level.
 - This risk context is not a trading trigger. Buy/sell/profit-taking instructions still come only from the deterministic strategy rules.
@@ -336,6 +386,39 @@ Possible future improvements, only if needed:
 - או, אחרי 20 ימי מסחר, כניסה מחדש לפי מגמה כל עוד TQQQ עדיין מעל SMA200.
 
 גם במצב בטיחות ידני כלל ה-RSI14 עדיין חל. גם אם יעד ה-pullback הידני, איפוס SMA200, או timeout של 20 ימי מסחר מוכנים, הבוט יחכה עד ש-RSI14 יהיה 60 או נמוך יותר לפני שליחת הוראת קנייה מחדש.
+
+### נכס המתנה מחוץ ל-TQQQ
+
+ב-2026-05-14 נבדקו היסטורית נכסי המתנה זמניים לתקופות שבהן הבוט מחוץ ל-TQQQ ומחכה לכניסה מחדש. `SGOV`/`BIL` נדחו כי בתקופת המתנה קצרה הצפי לרווח קטן מדי ביחס לעלויות/מס/חיכוך.
+
+חלון בדיקה מתוקן: 2010-11-24 עד 2026-05-13.
+
+| נכס המתנה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית | פירוש |
+| --- | ---: | ---: | ---: | --- |
+| מזומן | 38.2x | 26.6% | -47.7% | מפספס יותר מדי אפסייד |
+| QQQ | 134.8x | 37.3% | -45.7% | אופציה פשוטה וטובה |
+| XLK | 151.3x | 38.3% | -44.2% | נכס ההמתנה שנבחר |
+| VGT | 148.1x | 38.1% | -44.9% | קרוב מאוד ל-XLK |
+| SMH | 216.7x | 41.6% | -54.6% | יותר תשואה, יותר סיכון |
+| QLD | 218.9x | 41.7% | -66.5% | ממונף מדי למצב המתנה |
+| USD | 308.2x | 44.9% | -79.0% | מסוכן מדי למצב המתנה |
+
+החלטה: להשתמש ב-`XLK` כנכס ההמתנה המועדף כשהבוט מחוץ ל-TQQQ אבל רוצים עדיין חשיפה לטכנולוגיה גדולה. הבוט לא קונה או מוכר XLK אוטומטית בחשבון האמיתי. הוא רק מציג את ההמלצה ועוקב אחרי XLK אם הפעולה נרשמה ידנית.
+
+מצבי מעקב ידניים ל-XLK:
+
+- `manual_parking_bought` עם `manual_price=<actual XLK buy price>` ואופציונלית `manual_shares=<actual XLK shares>`.
+- `manual_parking_sold` עם `manual_price=<actual XLK sell price>`.
+
+הזרימה:
+
+1. אם הבוט יוצא מ-TQQQ, מוכרים TQQQ ידנית.
+2. אם רוצים את תוכנית נכס ההמתנה, קונים XLK ידנית.
+3. מריצים `manual_parking_bought` כדי שהבוט יעקוב אחרי ערך XLK במסלול האמיתי.
+4. כשהבוט שולח בהמשך איתות כניסה ל-TQQQ, מוכרים XLK ידנית וקונים TQQQ ידנית.
+5. מריצים `manual_parking_sold`, ואז `manual_bought` עם מחיר הקנייה האמיתי של TQQQ.
+
+הבנצ'מרק של Bot-Only מתנהג אחרת: הוא מדמה אוטומטית מעבר ל-XLK אחרי יציאת בוט וחזרה ל-TQQQ באיתות הכניסה הבא. זה על הנייר בלבד ולא אומר שהחשבון האמיתי קנה XLK.
 
 הטריילינג סטופ עכשיו הוא:
 

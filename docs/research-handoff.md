@@ -1,6 +1,6 @@
 # TQQQ Strategy Research Handoff
 
-Last updated: 2026-05-12
+Last updated: 2026-05-14
 
 ## Purpose
 
@@ -13,6 +13,7 @@ The live repo is an automated TQQQ alert bot. It sends Telegram instructions, bu
 Asset:
 
 - Execution asset: `TQQQ`
+- Waiting asset while out of TQQQ: `XLK`
 - Long only
 
 Entry:
@@ -64,6 +65,28 @@ Manual safety mode:
   - 20 trading days passed and TQQQ is still above SMA200.
 - The `RSI14 <= 60` re-entry guard still applies to all manual safety re-entry paths.
 
+Waiting asset:
+
+- On 2026-05-14, temporary out-of-TQQQ parking options were tested.
+- `SGOV`/`BIL` were rejected because the expected holding period is short and tax/broker friction can be larger than the benefit.
+- Corrected full-history result from 2010-11-24 through 2026-05-13:
+
+| Waiting Asset | Final | CAGR | Max DD | Note |
+| --- | ---: | ---: | ---: | --- |
+| Cash | 38.2x | 26.6% | -47.7% | Missed upside |
+| QQQ | 134.8x | 37.3% | -45.7% | Good simple option |
+| XLK | 151.3x | 38.3% | -44.2% | Selected default |
+| VGT | 148.1x | 38.1% | -44.9% | Similar to XLK |
+| SMH | 216.7x | 41.6% | -54.6% | Higher risk |
+| QLD | 218.9x | 41.7% | -66.5% | Too leveraged |
+| USD | 308.2x | 44.9% | -79.0% | Too dangerous |
+
+- Real account behavior: XLK is manual only. The bot shows XLK guidance and tracks it only if the user records it.
+- Manual modes:
+  - `manual_parking_bought` with `manual_price=<XLK buy price>` and optional `manual_shares=<XLK shares>`.
+  - `manual_parking_sold` with `manual_price=<XLK sell price>`.
+- Bot-only benchmark behavior: automatically simulates XLK parking after bot exits TQQQ and returns to TQQQ on bot re-entry. This keeps the benchmark as a pure "follow the bot" path, not a manual path.
+
 Current tracked real position state:
 
 ```json
@@ -78,6 +101,9 @@ Current tracked real position state:
   "last_action": "manual_sold",
   "manual_exit_mode": true,
   "manual_exit_price": 67.37,
+  "parking_avg_cost": null,
+  "parking_shares": 0.0,
+  "parking_ticker": "XLK",
   "position_open": false,
   "profit_exit_date": null,
   "shares": 0.0,
@@ -91,6 +117,7 @@ Current implied levels:
 
 - Manual safety mode is active.
 - Re-buy condition from the current cash state: manual pullback target or SMA200 reset, plus `RSI14 <= 60`.
+- If the human buys XLK while waiting, it should be recorded with `manual_parking_bought`.
 - No active trailing stop while out of position.
 - No active profit target while out of position.
 
@@ -101,6 +128,7 @@ A separate file, `bot_strategy_state.json`, tracks the paper benchmark for the o
 - It starts from the same original TQQQ position.
 - It ignores manual/panic sells.
 - It follows only deterministic bot strategy rules.
+- It now also follows the selected bot waiting-asset rule by simulating XLK while out of TQQQ.
 - It is updated during normal bot checks.
 
 Use this at month-end to compare:

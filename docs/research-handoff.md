@@ -37,7 +37,8 @@ Trailing stop:
 Swing profit cycle:
 
 - Sell all shares at +20% from the current entry price.
-- After a +20% profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
+- Sell all shares on a profitable parabolic stretch: TQQQ 5-day return >= 25% or 10-day return >= 30%.
+- After a +20% profit exit or parabolic profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
 - If the pullback does not happen within 20 trading days, re-buy anyway as long as TQQQ is still above SMA200.
 - Every swing re-buy also requires `RSI14 <= 60`.
 - After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
@@ -393,7 +394,19 @@ The real account is currently in cash after the 2026-05-05 manual sell. Manual s
 
 On 2026-05-12, extra variants were tested from 2010-11-24 through 2026-05-12. The RSI14 <= 60 re-entry guard reduced historical max drawdown from -46.1% to -26.0% while keeping the final multiple close to the previous winner: 82.1x vs 85.8x. This guard was added because the real account is currently in cash and TQQQ is stretched.
 
-Parabolic stretch exits were also checked. TQQQ 5-day return >= 25% and 10-day return >= 30% improved the backtest when used as sell rules, but each fired only once in more than 15 years. They were added to the Telegram report as advisory-only warnings, not automatic sell rules.
+Parabolic stretch exits were also checked. TQQQ 5-day return >= 25% and 10-day return >= 30% improved the backtest when used as sell rules, but each fired only once in more than 15 years. They were initially added to the Telegram report as advisory-only warnings.
+
+On 2026-05-15, the +20% profit rule and parabolic rule were tested together with the current 16% TQQQ trailing stop, XLK waiting asset, and RSI <= 60 re-entry guard:
+
+| Strategy | Final | CAGR | Max DD |
+| --- | ---: | ---: | ---: |
+| +20% profit, parabolic advisory only | 55.6x | 29.7% | -47.7% |
+| +20% profit + auto parabolic 5d>=25% or 10d>=30% | 63.7x | 30.8% | -47.7% |
+| +15% profit, no parabolic | 31.4x | 25.0% | -50.1% |
+| +25% profit, no parabolic | 28.1x | 24.1% | -52.4% |
+| No profit rule, parabolic only | 20.0x | 21.4% | -56.0% |
+
+Decision: keep the +20% profit rule and make parabolic stretch an automatic sell only while TQQQ is open and the trade is profitable. Treat it like a profit exit: wait for a 7.5% pullback or 20 trading days, plus RSI14 <= 60, before re-entering TQQQ.
 
 Manual safety re-entry was updated after checking strict manual, RSI-only, and hybrid timeout policies. The practical rule is strict first, then after 20 trading days allow re-entry above SMA200 if RSI14 <= 60. This is meant to avoid months in cash after a manual sell without allowing immediate chase-buying.
 

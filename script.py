@@ -662,7 +662,7 @@ def build_early_warning_lines(early_warning):
     ]
 
 
-def build_parabolic_warning_lines(ticker):
+def calculate_parabolic_stretch(ticker):
     row = ticker.iloc[-1]
     ret5 = float(row["RET5"])
     ret10 = float(row["RET10"])
@@ -672,11 +672,24 @@ def build_parabolic_warning_lines(ticker):
     if ret10 >= PARABOLIC_RET10_WARNING_PCT:
         active.append(f"10d return {ret10:+.1%}")
 
+    return {
+        "hit": bool(active),
+        "active": active,
+        "ret5": ret5,
+        "ret10": ret10,
+    }
+
+
+def build_parabolic_warning_lines(ticker):
+    parabolic = calculate_parabolic_stretch(ticker)
+    ret5 = parabolic["ret5"]
+    ret10 = parabolic["ret10"]
+    active = parabolic["active"]
     level = "Watch" if active else "Low"
     active_text = ", ".join(active) if active else "none"
     return [
         "⚡ Parabolic Stretch",
-        "What it means: advisory only; historically rare spike warnings, not automatic sell rules.",
+        "What it means: can trigger a profit-style sell only while a normal TQQQ position is open and profitable.",
         f"Level:         {level}",
         f"Active:        {active_text}",
         f"5d / 10d Ret:  {ret5:+.1%} / {ret10:+.1%}",
@@ -720,6 +733,7 @@ def update_bot_strategy_benchmark(ticker):
 
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     early_warning = calculate_early_warning(ticker)
+    parabolic = calculate_parabolic_stretch(ticker)
     if not position_open and parking_shares > 0:
         updated_parking_high = max(
             float(state.get("parking_highest_high_since_entry") or parking_high(ticker)),
@@ -740,6 +754,13 @@ def update_bot_strategy_benchmark(ticker):
         and shares > 0
         and avg_cost > 0
         and current_price >= avg_cost * (1 + SWING_PROFIT_TARGET_PCT)
+    )
+    hit_parabolic_exit = (
+        position_open
+        and shares > 0
+        and avg_cost > 0
+        and current_price >= avg_cost
+        and parabolic["hit"]
     )
     above_sma = current_price > sma200
     hit_rebuy_pullback = (
@@ -820,6 +841,26 @@ def update_bot_strategy_benchmark(ticker):
             "waiting_for_early_reentry": True,
             "early_exit_price": round(current_price, 4),
             "early_exit_date": current_date,
+            "last_action": action,
+        })
+        cash = park_cash_in_benchmark(state, ticker, cash)
+        state_changed = True
+    elif position_open and hit_parabolic_exit:
+        cash += shares * current_price
+        action = "benchmark_parabolic_profit_exit"
+        state.update({
+            "position_open": False,
+            "shares": 0.0,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "highest_high_since_entry": None,
+            "waiting_for_pullback": True,
+            "waiting_for_early_reentry": False,
+            "early_exit_price": None,
+            "early_exit_date": None,
+            "last_profit_sell_price": round(current_price, 4),
+            "profit_exit_date": current_date,
             "last_action": action,
         })
         cash = park_cash_in_benchmark(state, ticker, cash)
@@ -952,6 +993,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             state_dirty = True
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     early_warning = calculate_early_warning(ticker)
+    parabolic = calculate_parabolic_stretch(ticker)
     if not position_open and parking_shares > 0:
         updated_parking_high = max(
             float(state.get("parking_highest_high_since_entry") or parking_high(ticker)),
@@ -982,6 +1024,13 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         and shares > 0
         and avg_cost > 0
         and current_price >= avg_cost * (1 + SWING_PROFIT_TARGET_PCT)
+    )
+    hit_parabolic_exit = (
+        position_open
+        and shares > 0
+        and avg_cost > 0
+        and current_price >= avg_cost
+        and parabolic["hit"]
     )
     above_sma = current_price > sma200
     if manual_exit_mode and current_price < sma200 and not manual_exit_saw_below_sma:
@@ -1136,6 +1185,31 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         instruction_lines.append(f"Then manually buy {PARKING_TICKER} only if you accept continued tech exposure during risk cooldown.")
         instruction_lines.append(f"Risk signals: {', '.join(early_warning['active'])}")
         instruction_lines.append("Next re-buy trigger: price above SMA200 and SMA20 after risk cools.")
+    elif position_open and hit_parabolic_exit:
+        sell_shares = shares
+        cash += sell_shares * current_price
+        shares = 0.0
+        state.update({
+            "position_open": False,
+            "shares": shares,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "highest_high_since_entry": None,
+            "waiting_for_pullback": True,
+            **clear_early_exit_fields(),
+            "last_profit_sell_price": round(current_price, 4),
+            "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
+            **clear_manual_exit_fields(),
+            "last_action": "parabolic_profit_exit",
+        })
+        state_changed = True
+        action = "⚡ SELL ALL — PARABOLIC PROFIT EXIT"
+        instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
+        instruction_lines.append(f"Reason: {', '.join(parabolic['active'])}.")
+        instruction_lines.append(f"Then manually buy {PARKING_TICKER} as the waiting asset.")
+        rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
+        instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
     elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_manual_rebuy_signal or hit_early_reentry_signal):
         if parking_shares > 0:
             action = "🟢 RE-BUY SIGNAL — MOVE XLK TO TQQQ"

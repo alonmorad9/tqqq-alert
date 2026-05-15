@@ -18,17 +18,18 @@ The current strategy is a high-risk/high-reward TQQQ swing strategy with an opti
 2. Sell all remaining shares if price crosses below the 200-day SMA.
 3. Sell all remaining shares if the true ratcheting 16% trailing stop is hit.
 4. Sell all shares when price reaches +20% from the current entry price.
-5. After a +20% profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
-6. If the pullback does not happen within 20 trading days, re-buy anyway as long as price is still above SMA200.
-7. Sell all early if the optimized early-drop risk model reaches 3 active warning signs.
-8. After an early-warning exit, re-buy only when TQQQ is back above both SMA200 and SMA20.
-9. After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
-10. Every fresh buy or re-buy also requires TQQQ RSI14 to be at or below 60. This avoids chasing stretched rallies.
-11. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
+5. Sell all shares on a profitable parabolic stretch: TQQQ 5-trading-day return >= 25% or 10-trading-day return >= 30%.
+6. After a +20% profit exit or parabolic profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
+7. If the pullback does not happen within 20 trading days, re-buy anyway as long as price is still above SMA200.
+8. Sell all early if the optimized early-drop risk model reaches 3 active warning signs.
+9. After an early-warning exit, re-buy only when TQQQ is back above both SMA200 and SMA20.
+10. After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
+11. Every fresh buy or re-buy also requires TQQQ RSI14 to be at or below 60. This avoids chasing stretched rallies.
+12. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
 There is no separate 5% hard stop anymore.
 
-The daily Telegram report also includes an advisory-only parabolic stretch warning. It does not trigger automatic sells. It flags rare spike conditions that historically sometimes led to useful manual profit exits:
+The daily Telegram report also includes a parabolic stretch section. If a normal TQQQ position is open and profitable, these conditions can trigger an automatic profit-style sell:
 
 - TQQQ 5-trading-day return at or above 25%.
 - TQQQ 10-trading-day return at or above 30%.
@@ -162,7 +163,19 @@ On 2026-05-12, extra re-entry guard variants were tested from 2010-11-24 through
 
 Decision: add the RSI14 <= 60 re-entry guard. It gave up only a small amount of historical return while cutting historical max drawdown dramatically. It is especially relevant when TQQQ is very stretched and the real account is in cash.
 
-Also on 2026-05-12, parabolic stretch exits were checked. The 5-day >= 25% and 10-day >= 30% rules improved the historical result in isolation, but each fired only once in more than 15 years. Decision: do not make them automatic sell rules yet. Add them to the Telegram report as advisory warnings only, so a human can decide whether to manually take profit during an unusually sharp spike.
+Also on 2026-05-12, parabolic stretch exits were checked. The 5-day >= 25% and 10-day >= 30% rules improved the historical result in isolation, but each fired only once in more than 15 years. They were initially added as advisory-only warnings.
+
+On 2026-05-15, the +20% profit rule and parabolic rule were tested together with the current 16% TQQQ trailing stop, XLK waiting asset, and RSI <= 60 re-entry guard. The best tested setup kept the +20% profit exit and upgraded parabolic stretch to an automatic profit-style exit:
+
+| Strategy | Final Multiple | CAGR | Max Drawdown |
+| --- | ---: | ---: | ---: |
+| +20% profit, parabolic advisory only | 55.6x | 29.7% | -47.7% |
+| +20% profit + auto parabolic 5d>=25% or 10d>=30% | 63.7x | 30.8% | -47.7% |
+| +15% profit, no parabolic | 31.4x | 25.0% | -50.1% |
+| +25% profit, no parabolic | 28.1x | 24.1% | -52.4% |
+| No profit rule, parabolic only | 20.0x | 21.4% | -56.0% |
+
+Decision: keep the +20% profit rule and make parabolic stretch an automatic sell only while TQQQ is open and the trade is profitable. The exit is treated like a profit exit: wait for a 7.5% pullback or 20 trading days, plus RSI14 <= 60, before re-entering TQQQ.
 
 Manual safety mode was also updated after testing strict manual re-entry, RSI-only re-entry, and hybrid timeout variants. The selected practical rule is: keep the strict manual pullback/reset first, but after 20 trading days allow re-entry above SMA200 if RSI14 <= 60. This avoids immediately chasing after a manual sell while reducing the risk of being stuck in cash for months.
 
@@ -371,17 +384,18 @@ Possible future improvements, only if needed:
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
 3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 16% מופעל.
 4. למכור את כל המניות כשהמחיר מגיע ל-+20% ממחיר הכניסה הנוכחי.
-5. אחרי יציאת רווח של +20%, לחכות לכניסה מחדש אחרי ירידה של 7.5% ממחיר המכירה.
-6. אם הירידה לא מגיעה תוך 20 ימי מסחר, להיכנס מחדש בכל זאת כל עוד המחיר עדיין מעל SMA200.
-7. למכור הכל מוקדם אם מודל הסיכון המוקדם מגיע ל-3 סימני אזהרה פעילים.
-8. אחרי יציאת early-warning, להיכנס מחדש רק כש-TQQQ חוזרת מעל SMA200 וגם מעל SMA20.
-9. אחרי יציאה בגלל סטופ או SMA200, לא משתמשים בכלל ה-pullback; מחכים לחצייה חדשה מעל SMA200.
-10. כל קנייה חדשה או כניסה מחדש דורשת גם RSI14 של TQQQ שווה או נמוך מ-60. זה נועד למנוע כניסה אחרי ראלי מתוח מדי.
-11. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
+5. למכור את כל המניות בזינוק parabolic רווחי: תשואת TQQQ ב-5 ימי מסחר >= 25% או ב-10 ימי מסחר >= 30%.
+6. אחרי יציאת רווח של +20% או יציאת parabolic, לחכות לכניסה מחדש אחרי ירידה של 7.5% ממחיר המכירה.
+7. אם הירידה לא מגיעה תוך 20 ימי מסחר, להיכנס מחדש בכל זאת כל עוד המחיר עדיין מעל SMA200.
+8. למכור הכל מוקדם אם מודל הסיכון המוקדם מגיע ל-3 סימני אזהרה פעילים.
+9. אחרי יציאת early-warning, להיכנס מחדש רק כש-TQQQ חוזרת מעל SMA200 וגם מעל SMA20.
+10. אחרי יציאה בגלל סטופ או SMA200, לא משתמשים בכלל ה-pullback; מחכים לחצייה חדשה מעל SMA200.
+11. כל קנייה חדשה או כניסה מחדש דורשת גם RSI14 של TQQQ שווה או נמוך מ-60. זה נועד למנוע כניסה אחרי ראלי מתוח מדי.
+12. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
 
 אין יותר סטופ קשיח נפרד של 5%.
 
-בדוח היומי לטלגרם יש גם אזהרת parabolic stretch לצורך מידע בלבד. היא לא גורמת למכירה אוטומטית. היא מסמנת מצבי זינוק נדירים שבהיסטוריה לפעמים עזרו כנקודת יציאה ידנית:
+בדוח היומי לטלגרם יש גם אזור parabolic stretch. אם יש פוזיציית TQQQ רגילה פתוחה והטרייד ברווח, התנאים האלה יכולים לגרום למכירת רווח אוטומטית:
 
 - תשואת TQQQ ב-5 ימי מסחר שווה או מעל 25%.
 - תשואת TQQQ ב-10 ימי מסחר שווה או מעל 30%.
@@ -515,7 +529,19 @@ Possible future improvements, only if needed:
 
 החלטה: להוסיף את כלל הכניסה RSI14 <= 60. הוויתור ההיסטורי בתשואה היה קטן, אבל הירידה המקסימלית ההיסטורית ירדה משמעותית. זה רלוונטי במיוחד כש-TQQQ מתוחה מאוד והחשבון האמיתי במזומן.
 
-גם ב-2026-05-12 נבדקו יציאות בגלל parabolic stretch. כללי 5 ימים >= 25% ו-10 ימים >= 30% שיפרו את התוצאה ההיסטורית בנפרד, אבל כל אחד הופעל רק פעם אחת ביותר מ-15 שנה. החלטה: לא להפוך אותם לכללי מכירה אוטומטיים עדיין. להוסיף אותם לדוח הטלגרם כאזהרות מידע בלבד, כדי שהאדם יוכל להחליט אם לממש ידנית בזמן זינוק חריג מאוד.
+גם ב-2026-05-12 נבדקו יציאות בגלל parabolic stretch. כללי 5 ימים >= 25% ו-10 ימים >= 30% שיפרו את התוצאה ההיסטורית בנפרד, אבל כל אחד הופעל רק פעם אחת ביותר מ-15 שנה. בהתחלה הם נוספו לדוח כאזהרות מידע בלבד.
+
+ב-2026-05-15 בדקנו את כלל הרווח +20% יחד עם כלל parabolic, כולל טריילינג סטופ TQQQ של 16%, נכס המתנה XLK, וכלל כניסה מחדש RSI <= 60. הסטאפ הכי טוב שנבדק השאיר את כלל הרווח +20% והפך את parabolic stretch למכירת רווח אוטומטית:
+
+| אסטרטגיה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית |
+| --- | ---: | ---: | ---: |
+| רווח +20%, parabolic כאזהרה בלבד | 55.6x | 29.7% | -47.7% |
+| רווח +20% + מכירת parabolic אוטומטית 5d>=25% או 10d>=30% | 63.7x | 30.8% | -47.7% |
+| רווח +15%, בלי parabolic | 31.4x | 25.0% | -50.1% |
+| רווח +25%, בלי parabolic | 28.1x | 24.1% | -52.4% |
+| בלי כלל רווח, רק parabolic | 20.0x | 21.4% | -56.0% |
+
+החלטה: להשאיר את כלל הרווח +20% ולהפוך parabolic stretch למכירה אוטומטית רק כשיש פוזיציית TQQQ פתוחה והטרייד ברווח. היציאה מתנהגת כמו יציאת רווח: מחכים לירידה של 7.5% או 20 ימי מסחר, ובנוסף RSI14 <= 60, לפני כניסה מחדש ל-TQQQ.
 
 מצב בטיחות ידני עודכן גם אחרי בדיקה של כניסה ידנית קשיחה, כניסה לפי RSI בלבד, וגרסאות timeout היברידיות. הכלל הפרקטי שנבחר: קודם לשמור על pullback/reset ידני קשיח, אבל אחרי 20 ימי מסחר לאפשר כניסה מחדש מעל SMA200 אם RSI14 <= 60. זה מונע קנייה מיידית אחרי מכירה ידנית, אבל מקטין את הסיכון להיתקע במזומן חודשים.
 

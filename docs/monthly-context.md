@@ -1,6 +1,6 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 ## English
 
@@ -16,7 +16,7 @@ The current strategy is a high-risk/high-reward TQQQ swing strategy with an opti
 
 1. Hold TQQQ while price is above the 200-day SMA.
 2. Sell all remaining shares if price crosses below the 200-day SMA.
-3. Sell all remaining shares if the true ratcheting 25% trailing stop is hit.
+3. Sell all remaining shares if the true ratcheting 16% trailing stop is hit.
 4. Sell all shares when price reaches +20% from the current entry price.
 5. After a +20% profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
 6. If the pullback does not happen within 20 trading days, re-buy anyway as long as price is still above SMA200.
@@ -91,9 +91,9 @@ XLK sell rules:
 
 The bot-only benchmark behaves differently: it automatically simulates moving into XLK after bot exits if TQQQ is still above SMA200 and early-drop risk is not high, moves from XLK back into TQQQ on bot re-entry, and moves from XLK to cash if TQQQ becomes defensive or the XLK 5% trailing stop is hit. This keeps the benchmark as "only follow bot rules, no manual decisions."
 
-The trailing stop is now:
+The TQQQ trailing stop is now:
 
-> Highest high since entry x 0.75
+> Highest high since entry x 0.84
 
 It only moves upward while the position is open. It resets after a full exit and starts again after the next re-entry.
 
@@ -131,7 +131,17 @@ On 2026-05-03, trailing stop variants were retested from 2010-11-24 through 2026
 | Exact low -8x ATR14 stop | 61.6x | 30.6% | -42.7% |
 | Highest high since entry -25% stop | 66.0x | 31.2% | -42.7% |
 
-The chosen stop is therefore the 25% true ratchet. ATR-based stops were tested, but the useful ATR version had to be very wide and still did not beat the simpler 25% ratchet.
+On 2026-05-15, after adding XLK waiting-asset behavior and the RSI <= 60 re-entry guard, TQQQ trailing stops were retested again from 2010-11-24 through 2026-05-13. The strongest practical result was a 16% true ratchet:
+
+| TQQQ trailing stop | Final Multiple | CAGR | Max Drawdown |
+| --- | ---: | ---: | ---: |
+| No TQQQ trailing stop | 43.1x | 27.6% | -47.7% |
+| 25% true ratchet | 44.5x | 27.8% | -47.7% |
+| 18% true ratchet | 47.0x | 28.3% | -47.7% |
+| 16% true ratchet | 55.6x | 29.7% | -47.7% |
+| 10% true ratchet | 22.4x | 22.3% | -56.6% |
+
+Decision: update the live TQQQ stop from 25% to 16%. Very tight 5-10% TQQQ stops were rejected because they caused too many noisy exits.
 
 On 2026-05-06, an early-warning strategy search was run from 2010-11-24 through 2026-05-06 using TQQQ, QQQ, and VIX. The selected version was the best return version that also improved drawdown versus the local current-swing baseline:
 
@@ -211,7 +221,7 @@ This benchmark started from the same original position:
 - Shares: `40.4647`
 - Average cost: `$61.54`
 
-Unlike `position_state.json`, this file ignores manual/panic sells. It only follows the deterministic bot rules: +20% profit exit, 25% trailing stop, SMA200 exit, and the strategy's own re-entry rules.
+Unlike `position_state.json`, this file ignores manual/panic sells. It only follows the deterministic bot rules: +20% profit exit, 16% trailing stop, SMA200 exit, and the strategy's own re-entry rules.
 
 As of 2026-05-14, the benchmark also simulates the selected waiting-asset behavior: after bot exits TQQQ, it parks the benchmark value in XLK until the next bot re-entry signal. This is paper-only and does not imply the real account bought XLK.
 
@@ -359,7 +369,7 @@ Possible future improvements, only if needed:
 
 1. להחזיק TQQQ כל עוד המחיר מעל SMA200.
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
-3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 25% מופעל.
+3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 16% מופעל.
 4. למכור את כל המניות כשהמחיר מגיע ל-+20% ממחיר הכניסה הנוכחי.
 5. אחרי יציאת רווח של +20%, לחכות לכניסה מחדש אחרי ירידה של 7.5% ממחיר המכירה.
 6. אם הירידה לא מגיעה תוך 20 ימי מסחר, להיכנס מחדש בכל זאת כל עוד המחיר עדיין מעל SMA200.
@@ -434,9 +444,9 @@ Possible future improvements, only if needed:
 
 הבנצ'מרק של Bot-Only מתנהג אחרת: הוא מדמה אוטומטית מעבר ל-XLK אחרי יציאת בוט אם TQQQ עדיין מעל SMA200 וסיכון early-drop לא גבוה, חזרה מ-XLK ל-TQQQ באיתות הכניסה הבא, ומעבר מ-XLK למזומן אם TQQQ נהיית דפנסיבית או אם סטופ XLK של 5% מופעל. זה על הנייר בלבד ולא אומר שהחשבון האמיתי קנה XLK.
 
-הטריילינג סטופ עכשיו הוא:
+הטריילינג סטופ של TQQQ עכשיו הוא:
 
-> המחיר הגבוה ביותר מאז הכניסה x 0.75
+> המחיר הגבוה ביותר מאז הכניסה x 0.84
 
 הסטופ רק עולה בזמן שהפוזיציה פתוחה. אחרי מכירה מלאה הוא מתאפס, ומתחיל מחדש אחרי הכניסה הבאה.
 
@@ -474,7 +484,17 @@ Possible future improvements, only if needed:
 | סטופ ATR: low -8x ATR14 | 61.6x | 30.6% | -42.7% |
 | שיא מאז הכניסה פחות 25% | 66.0x | 31.2% | -42.7% |
 
-לכן הסטופ שנבחר הוא טריילינג אמיתי של 25%. נבדקו גם סטופים לפי ATR, אבל הגרסה הטובה הייתה צריכה להיות רחבה מאוד ועדיין לא ניצחה את כלל ה-25% הפשוט.
+ב-2026-05-15, אחרי הוספת התנהגות XLK כנכס המתנה וכלל כניסה מחדש RSI <= 60, בדקנו שוב טריילינג סטופים ל-TQQQ מ-2010-11-24 עד 2026-05-13. התוצאה הפרקטית החזקה ביותר הייתה טריילינג סטופ אמיתי של 16%:
+
+| טריילינג סטופ TQQQ | מכפיל סופי | CAGR | Max drawdown |
+| --- | ---: | ---: | ---: |
+| בלי טריילינג סטופ TQQQ | 43.1x | 27.6% | -47.7% |
+| טריילינג אמיתי 25% | 44.5x | 27.8% | -47.7% |
+| טריילינג אמיתי 18% | 47.0x | 28.3% | -47.7% |
+| טריילינג אמיתי 16% | 55.6x | 29.7% | -47.7% |
+| טריילינג אמיתי 10% | 22.4x | 22.3% | -56.6% |
+
+החלטה: לעדכן את הסטופ החי של TQQQ מ-25% ל-16%. סטופים צמודים מאוד של 5-10% נדחו כי הם גרמו ליותר מדי יציאות מרעש רגיל.
 
 ב-2026-05-06 הורץ חיפוש אסטרטגיות early-warning מ-2010-11-24 עד 2026-05-06 על TQQQ, QQQ ו-VIX. הגרסה שנבחרה הייתה גרסת התשואה הטובה ביותר שגם שיפרה את הירידה המקסימלית לעומת בסיס הסווינג המקומי:
 
@@ -551,7 +571,7 @@ Possible future improvements, only if needed:
 - מניות: `40.4647`
 - מחיר ממוצע: `$61.54`
 
-בניגוד ל-`position_state.json`, הקובץ הזה מתעלם ממכירות ידניות/פאניקה. הוא עוקב רק אחרי חוקי הבוט הדטרמיניסטיים: יציאת רווח ב-+20%, טריילינג סטופ של 25%, יציאת SMA200, וכללי הכניסה מחדש של האסטרטגיה.
+בניגוד ל-`position_state.json`, הקובץ הזה מתעלם ממכירות ידניות/פאניקה. הוא עוקב רק אחרי חוקי הבוט הדטרמיניסטיים: יציאת רווח ב-+20%, טריילינג סטופ של 16%, יציאת SMA200, וכללי הכניסה מחדש של האסטרטגיה.
 
 בדוחות היומיים מופיע אזור `Bot-Only Benchmark` עם הערך של הבנצ'מרק וההפרש מול המסלול האמיתי. בסוף החודש נשווה:
 

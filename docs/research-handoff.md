@@ -29,8 +29,8 @@ Full exit:
 
 Trailing stop:
 
-- Stop is 25% below the highest high since entry.
-- Formula: `highest_high_since_entry * 0.75`
+- Stop is 16% below the highest high since entry.
+- Formula: `highest_high_since_entry * 0.84`
 - It only moves upward while a position is open.
 - It resets after a full exit and starts again after the next entry.
 
@@ -195,8 +195,14 @@ Trailing stops:
 
 Conclusion:
 
-- Best practical stop remains true 25% ratchet from highest high since entry.
-- ATR stops were worse unless extremely wide, and still did not clearly beat the 25% ratchet.
+- 2026-05-15 retest after adding XLK waiting-asset behavior and the RSI <= 60 re-entry guard:
+  - No TQQQ trailing stop: `43.1x`, `27.6%` CAGR, `-47.7%` max drawdown.
+  - 25% true ratchet: `44.5x`, `27.8%` CAGR, `-47.7%` max drawdown.
+  - 18% true ratchet: `47.0x`, `28.3%` CAGR, `-47.7%` max drawdown.
+  - 16% true ratchet: `55.6x`, `29.7%` CAGR, `-47.7%` max drawdown.
+  - 10% true ratchet: `22.4x`, `22.3%` CAGR, `-56.6%` max drawdown.
+- Current selected TQQQ stop is now true 16% ratchet from highest high since entry.
+- Very tight 5-10% TQQQ stops were rejected because they caused too many noisy exits.
 
 Trend filters:
 

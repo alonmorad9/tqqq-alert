@@ -14,6 +14,7 @@
   "manual_exit_price": 67.37,
   "manual_exit_saw_below_sma": false,
   "parking_avg_cost": 178.62,
+  "parking_highest_high_since_entry": 178.62,
   "parking_shares": 15.1158,
   "parking_ticker": "XLK",
   "position_open": false,

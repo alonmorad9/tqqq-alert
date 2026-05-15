@@ -87,8 +87,9 @@ XLK sell rules:
 - Sell XLK and move back to TQQQ when the normal TQQQ re-entry signal triggers.
 - Sell XLK and wait in cash if TQQQ falls below SMA200.
 - Sell XLK and wait in cash if the early-drop risk model reaches 3 active warning signs.
+- Sell XLK and wait in cash if XLK hits its own 5% ratcheting trailing stop, calculated from the highest XLK high since the XLK waiting-asset entry.
 
-The bot-only benchmark behaves differently: it automatically simulates moving into XLK after bot exits if TQQQ is still above SMA200 and early-drop risk is not high, moves from XLK back into TQQQ on bot re-entry, and moves from XLK to cash if TQQQ becomes defensive. This keeps the benchmark as "only follow bot rules, no manual decisions."
+The bot-only benchmark behaves differently: it automatically simulates moving into XLK after bot exits if TQQQ is still above SMA200 and early-drop risk is not high, moves from XLK back into TQQQ on bot re-entry, and moves from XLK to cash if TQQQ becomes defensive or the XLK 5% trailing stop is hit. This keeps the benchmark as "only follow bot rules, no manual decisions."
 
 The trailing stop is now:
 
@@ -429,8 +430,9 @@ Possible future improvements, only if needed:
 - למכור XLK ולעבור בחזרה ל-TQQQ כשמופיע איתות כניסה רגיל ל-TQQQ.
 - למכור XLK ולהמתין במזומן אם TQQQ יורדת מתחת ל-SMA200.
 - למכור XLK ולהמתין במזומן אם מודל ה-early-drop risk מגיע ל-3 סימני אזהרה פעילים.
+- למכור XLK ולהמתין במזומן אם XLK מפעילה טריילינג סטופ עצמאי של 5%, שמחושב מהשיא הגבוה ביותר של XLK מאז הכניסה לנכס ההמתנה.
 
-הבנצ'מרק של Bot-Only מתנהג אחרת: הוא מדמה אוטומטית מעבר ל-XLK אחרי יציאת בוט אם TQQQ עדיין מעל SMA200 וסיכון early-drop לא גבוה, חזרה מ-XLK ל-TQQQ באיתות הכניסה הבא, ומעבר מ-XLK למזומן אם TQQQ נהיית דפנסיבית. זה על הנייר בלבד ולא אומר שהחשבון האמיתי קנה XLK.
+הבנצ'מרק של Bot-Only מתנהג אחרת: הוא מדמה אוטומטית מעבר ל-XLK אחרי יציאת בוט אם TQQQ עדיין מעל SMA200 וסיכון early-drop לא גבוה, חזרה מ-XLK ל-TQQQ באיתות הכניסה הבא, ומעבר מ-XLK למזומן אם TQQQ נהיית דפנסיבית או אם סטופ XLK של 5% מופעל. זה על הנייר בלבד ולא אומר שהחשבון האמיתי קנה XLK.
 
 הטריילינג סטופ עכשיו הוא:
 

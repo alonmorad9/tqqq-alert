@@ -19,6 +19,7 @@ STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
 TRAILING_STOP_PCT = 0.25
+PARKING_TRAILING_STOP_PCT = 0.05
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.075
 SWING_REBUY_TIMEOUT_DAYS = 20
@@ -241,6 +242,7 @@ def default_state():
         "parking_ticker": PARKING_TICKER,
         "parking_shares": 0.0,
         "parking_avg_cost": None,
+        "parking_highest_high_since_entry": None,
         "highest_high_since_entry": None,
         "waiting_for_pullback": False,
         **clear_early_exit_fields(),
@@ -406,6 +408,7 @@ def fetch_market_data():
     ticker.attrs["qqq_price_source"] = qqq_live_source
     ticker.attrs["parking_ticker"] = PARKING_TICKER
     ticker.attrs["parking_price"] = float(parking["Close"].iloc[-1])
+    ticker.attrs["parking_high"] = float(parking["High"].iloc[-1])
     ticker.attrs["parking_price_source"] = parking_live_source
     ticker.attrs["vix_price_source"] = vix_live_source
     return ticker
@@ -427,6 +430,10 @@ def parking_price(ticker):
     return float(ticker.attrs.get("parking_price", 0.0))
 
 
+def parking_high(ticker):
+    return float(ticker.attrs.get("parking_high", parking_price(ticker)))
+
+
 def parking_value(state, ticker):
     return float(state.get("parking_shares", 0.0)) * parking_price(ticker)
 
@@ -436,6 +443,7 @@ def clear_parking_fields():
         "parking_ticker": PARKING_TICKER,
         "parking_shares": 0.0,
         "parking_avg_cost": None,
+        "parking_highest_high_since_entry": None,
     }
 
 
@@ -448,6 +456,7 @@ def park_cash_in_benchmark(state, ticker, cash):
         "parking_ticker": PARKING_TICKER,
         "parking_shares": round(cash / price, 6),
         "parking_avg_cost": round(price, 4),
+        "parking_highest_high_since_entry": round(parking_high(ticker), 4),
         "cash": 0.0,
     })
     return 0.0
@@ -499,6 +508,12 @@ def calculate_trailing_stop(highest_high):
     if highest_high is None:
         return None
     return round(float(highest_high) * (1 - TRAILING_STOP_PCT), 2)
+
+
+def calculate_parking_trailing_stop(highest_high):
+    if highest_high is None:
+        return None
+    return round(float(highest_high) * (1 - PARKING_TRAILING_STOP_PCT), 2)
 
 
 def trading_days_since(date_text, ticker):
@@ -705,11 +720,21 @@ def update_bot_strategy_benchmark(ticker):
 
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     early_warning = calculate_early_warning(ticker)
+    if not position_open and parking_shares > 0:
+        updated_parking_high = max(
+            float(state.get("parking_highest_high_since_entry") or parking_high(ticker)),
+            parking_high(ticker),
+        )
+        if state.get("parking_highest_high_since_entry") != round(updated_parking_high, 4):
+            state["parking_highest_high_since_entry"] = round(updated_parking_high, 4)
+            state_changed = True
+    parking_trailing_stop = calculate_parking_trailing_stop(state.get("parking_highest_high_since_entry"))
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
-    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"])
+    hit_parking_trailing_stop = parking_shares > 0 and parking_trailing_stop is not None and parking_price(ticker) < parking_trailing_stop
+    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"] or hit_parking_trailing_stop)
     hit_profit_target = (
         position_open
         and shares > 0
@@ -736,7 +761,7 @@ def update_bot_strategy_benchmark(ticker):
 
     if not position_open and hit_parking_defensive_exit:
         cash = unpark_benchmark_to_cash(state, ticker, cash)
-        action = "benchmark_sell_xlk_defensive"
+        action = "benchmark_sell_xlk_trailing_stop" if hit_parking_trailing_stop else "benchmark_sell_xlk_defensive"
         state["last_action"] = action
         state_changed = True
     elif position_open and (hit_trailing_stop or crossed_below_sma):
@@ -927,6 +952,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             state_dirty = True
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     early_warning = calculate_early_warning(ticker)
+    if not position_open and parking_shares > 0:
+        updated_parking_high = max(
+            float(state.get("parking_highest_high_since_entry") or parking_high(ticker)),
+            parking_high(ticker),
+        )
+        if state.get("parking_highest_high_since_entry") != round(updated_parking_high, 4):
+            state["parking_highest_high_since_entry"] = round(updated_parking_high, 4)
+            state_dirty = True
+    parking_trailing_stop = calculate_parking_trailing_stop(state.get("parking_highest_high_since_entry"))
 
     current_parking_price = parking_price(ticker)
     parking_position_value = parking_shares * current_parking_price
@@ -941,7 +975,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
-    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"])
+    hit_parking_trailing_stop = parking_shares > 0 and parking_trailing_stop is not None and current_parking_price < parking_trailing_stop
+    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"] or hit_parking_trailing_stop)
     hit_profit_target = (
         position_open
         and shares > 0
@@ -998,6 +1033,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
 
     if not position_open and hit_parking_defensive_exit:
         action = f"🅿️ SELL {PARKING_TICKER} — WAIT IN CASH"
+        if hit_parking_trailing_stop:
+            instruction_lines.append(f"Reason: {PARKING_TICKER} 5% trailing stop hit (${parking_trailing_stop:.2f}).")
         if current_price < sma200:
             instruction_lines.append(f"Reason: {TICKER} is below SMA200, so market-waiting exposure is no longer preferred.")
         if early_warning["hit"]:
@@ -1209,6 +1246,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     highest_high_since_entry = state.get("highest_high_since_entry")
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     current_parking_price = parking_price(ticker)
+    parking_highest_high = state.get("parking_highest_high_since_entry")
+    parking_trailing_stop = calculate_parking_trailing_stop(parking_highest_high)
     parking_position_value = parking_shares * current_parking_price
     parking_cost_basis = parking_shares * parking_avg_cost
     parking_pnl = parking_position_value - parking_cost_basis if parking_shares > 0 else 0.0
@@ -1289,6 +1328,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🅿️ Waiting Asset: {PARKING_TICKER} @ ${current_parking_price:.2f} ({ticker.attrs.get('parking_price_source', 'daily')})")
             if parking_shares > 0:
                 lines.append(f"   Holding: {parking_shares:.4f} shares / ${parking_position_value:.2f} ({parking_pnl_pct:+.2f}%)")
+                if parking_trailing_stop is not None:
+                    parking_stop_gap = ((parking_trailing_stop - current_parking_price) / current_parking_price) * 100
+                    lines.append(f"   XLK Trail Stop: ${parking_trailing_stop:.2f} ({parking_stop_gap:+.1f}% away)")
             elif cash > 0:
                 lines.append(f"   Plan: manually buy {PARKING_TICKER} with available cash if you want tech exposure while waiting.")
             else:
@@ -1317,6 +1359,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 f"🅿️ {PARKING_TICKER} Value:  ${parking_position_value:.2f}",
                 f"🅿️ {PARKING_TICKER} P&L:    ${parking_pnl:+.2f} ({parking_pnl_pct:+.2f}%)",
             ])
+            if parking_trailing_stop is not None:
+                lines.append(f"🛑 {PARKING_TICKER} Stop:   ${parking_trailing_stop:.2f}")
         lines.extend([
             f"🏦 Cash:         ${cash:.2f}",
             f"💼 TQQQ Value:   ${position_value:.2f}",
@@ -1370,6 +1414,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             if parking_shares > 0:
                 lines.append(f"🅿️ {PARKING_TICKER}: {parking_shares:.4f} shares / ${parking_position_value:.2f}")
                 lines.append(f"🅿️ {PARKING_TICKER} P&L: ${parking_pnl:+.2f} ({parking_pnl_pct:+.2f}%)")
+                if parking_trailing_stop is not None:
+                    lines.append(f"🛑 {PARKING_TICKER} Stop: ${parking_trailing_stop:.2f}")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",
@@ -1532,6 +1578,7 @@ def mark_manual_parking_bought():
         "parking_ticker": PARKING_TICKER,
         "parking_shares": round(shares, 6),
         "parking_avg_cost": round(manual_price, 4),
+        "parking_highest_high_since_entry": round(manual_price, 4),
         "cash": remaining_cash,
         "last_action": f"manual_{PARKING_TICKER.lower()}_bought",
     })

@@ -16,15 +16,15 @@ The current strategy is a high-risk/high-reward TQQQ swing strategy with an opti
 
 1. Hold TQQQ while price is above the 200-day SMA.
 2. Sell all remaining shares if price crosses below the 200-day SMA.
-3. Sell all remaining shares if the true ratcheting 16% trailing stop is hit.
+3. Sell all remaining shares if the true ratcheting 14% trailing stop is hit.
 4. Sell all shares when price reaches +20% from the current entry price.
-5. Sell all shares on a profitable parabolic stretch: TQQQ 5-trading-day return >= 25% or 10-trading-day return >= 30%.
+5. Sell all shares on a profitable parabolic stretch: TQQQ 5-trading-day return >= 25%.
 6. After a +20% profit exit or parabolic profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
 7. If the pullback does not happen within 20 trading days, re-buy anyway as long as price is still above SMA200.
 8. Sell all early if the optimized early-drop risk model reaches 3 active warning signs.
 9. After an early-warning exit, re-buy only when TQQQ is back above both SMA200 and SMA20.
 10. After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
-11. Every fresh buy or re-buy also requires TQQQ RSI14 to be at or below 60. This avoids chasing stretched rallies.
+11. Every fresh buy or re-buy also requires TQQQ RSI14 to be at or below 65. This avoids chasing stretched rallies.
 12. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
 There is no separate 5% hard stop anymore.
@@ -32,7 +32,6 @@ There is no separate 5% hard stop anymore.
 The daily Telegram report also includes a parabolic stretch section. If a normal TQQQ position is open and profitable, these conditions can trigger an automatic profit-style sell:
 
 - TQQQ 5-trading-day return at or above 25%.
-- TQQQ 10-trading-day return at or above 30%.
 
 The early-warning sell model checks five signals:
 
@@ -50,7 +49,7 @@ Manual safety mode is optional and does not run unless triggered manually from G
 - Or a full SMA200 reset: price goes below SMA200 first, then later crosses back above SMA200.
 - Or, after 20 trading days, a trend re-entry while TQQQ is still above SMA200.
 
-The RSI14 re-entry guard still applies in manual safety mode. Even if the manual pullback, SMA200 reset, or 20-day timeout is ready, the bot waits until RSI14 is 60 or lower before sending a re-buy instruction.
+The RSI14 re-entry guard still applies in manual safety mode. Even if the manual pullback, SMA200 reset, or 20-day timeout is ready, the bot waits until RSI14 is 65 or lower before sending a re-buy instruction.
 
 ### Waiting Asset While Out Of TQQQ
 
@@ -94,7 +93,7 @@ The bot-only benchmark behaves differently: it automatically simulates moving in
 
 The TQQQ trailing stop is now:
 
-> Highest high since entry x 0.84
+> Highest high since entry x 0.86
 
 It only moves upward while the position is open. It resets after a full exit and starts again after the next re-entry.
 
@@ -132,7 +131,7 @@ On 2026-05-03, trailing stop variants were retested from 2010-11-24 through 2026
 | Exact low -8x ATR14 stop | 61.6x | 30.6% | -42.7% |
 | Highest high since entry -25% stop | 66.0x | 31.2% | -42.7% |
 
-On 2026-05-15, after adding XLK waiting-asset behavior and the RSI <= 60 re-entry guard, TQQQ trailing stops were retested again from 2010-11-24 through 2026-05-13. The strongest practical result was a 16% true ratchet:
+On 2026-05-15, after adding XLK waiting-asset behavior and rechecking the combined strategy, the selected high-risk/high-reward version was updated to a 14% TQQQ ratchet, RSI14 <= 65 re-entry guard, and parabolic auto-exit on 5-day TQQQ return >= 25%.
 
 | TQQQ trailing stop | Final Multiple | CAGR | Max Drawdown |
 | --- | ---: | ---: | ---: |
@@ -142,7 +141,7 @@ On 2026-05-15, after adding XLK waiting-asset behavior and the RSI <= 60 re-entr
 | 16% true ratchet | 55.6x | 29.7% | -47.7% |
 | 10% true ratchet | 22.4x | 22.3% | -56.6% |
 
-Decision: update the live TQQQ stop from 25% to 16%. Very tight 5-10% TQQQ stops were rejected because they caused too many noisy exits.
+Decision from the later combined grid: update the live TQQQ stop to 14% because it performed best together with RSI14 <= 65 and 5-day parabolic auto-exits. Very tight 5-10% TQQQ stops were still rejected because they caused too many noisy exits.
 
 On 2026-05-06, an early-warning strategy search was run from 2010-11-24 through 2026-05-06 using TQQQ, QQQ, and VIX. The selected version was the best return version that also improved drawdown versus the local current-swing baseline:
 
@@ -154,30 +153,32 @@ On 2026-05-06, an early-warning strategy search was run from 2010-11-24 through 
 
 Decision: switch the live bot to the best-return early-warning version because the real position is currently in cash. This is more active and may create more alerts, but historically it improved both final return and drawdown in the 2026-05-06 test.
 
-On 2026-05-12, extra re-entry guard variants were tested from 2010-11-24 through 2026-05-12. The best practical improvement was to keep the same exit rules but require RSI14 <= 60 before any fresh buy or re-buy:
+On 2026-05-12, extra re-entry guard variants were tested from 2010-11-24 through 2026-05-12. The best practical improvement was to keep the same exit rules but require RSI14 <= 65 before any fresh buy or re-buy:
 
 | Strategy | Final Multiple | CAGR | Max Drawdown | Trades |
 | --- | ---: | ---: | ---: | ---: |
 | Current early-warning strategy before RSI guard | 85.8x | 33.4% | -46.1% | 240 |
-| Add RSI14 <= 60 re-entry guard | 82.1x | 33.0% | -26.0% | 116 |
+| Add RSI14 <= 65 re-entry guard | 82.1x | 33.0% | -26.0% | 116 |
 
-Decision: add the RSI14 <= 60 re-entry guard. It gave up only a small amount of historical return while cutting historical max drawdown dramatically. It is especially relevant when TQQQ is very stretched and the real account is in cash.
+Decision: add the RSI14 <= 65 re-entry guard. It gave up only a small amount of historical return while cutting historical max drawdown dramatically. It is especially relevant when TQQQ is very stretched and the real account is in cash.
 
 Also on 2026-05-12, parabolic stretch exits were checked. The 5-day >= 25% and 10-day >= 30% rules improved the historical result in isolation, but each fired only once in more than 15 years. They were initially added as advisory-only warnings.
 
-On 2026-05-15, the +20% profit rule and parabolic rule were tested together with the current 16% TQQQ trailing stop, XLK waiting asset, and RSI <= 60 re-entry guard. The best tested setup kept the +20% profit exit and upgraded parabolic stretch to an automatic profit-style exit:
+On 2026-05-15, the full combined rules were tested together: TQQQ trailing stop, +20% profit target, parabolic exit, early-warning layer, XLK waiting asset, XLK stop, pullback/timeout re-entry, and RSI guard. The selected high-risk/high-reward setup is:
+
+- TQQQ trailing stop: 14%.
+- Re-entry RSI cap: RSI14 <= 65.
+- Parabolic auto-exit: 5-day TQQQ return >= 25%.
+- Profit target remains +20%.
 
 | Strategy | Final Multiple | CAGR | Max Drawdown |
 | --- | ---: | ---: | ---: |
-| +20% profit, parabolic advisory only | 55.6x | 29.7% | -47.7% |
-| +20% profit + auto parabolic 5d>=25% or 10d>=30% | 63.7x | 30.8% | -47.7% |
-| +15% profit, no parabolic | 31.4x | 25.0% | -50.1% |
-| +25% profit, no parabolic | 28.1x | 24.1% | -52.4% |
-| No profit rule, parabolic only | 20.0x | 21.4% | -56.0% |
+| Prior selected combined strategy | 63.7x | 30.8% | -47.7% |
+| High-return selected combined strategy | 84.3x | 33.2% | -49.8% |
 
-Decision: keep the +20% profit rule and make parabolic stretch an automatic sell only while TQQQ is open and the trade is profitable. The exit is treated like a profit exit: wait for a 7.5% pullback or 20 trading days, plus RSI14 <= 60, before re-entering TQQQ.
+Decision: switch to the high-return selected combined strategy. The extra return comes with higher historical drawdown and more trades, matching the high-risk/high-reward preference.
 
-Manual safety mode was also updated after testing strict manual re-entry, RSI-only re-entry, and hybrid timeout variants. The selected practical rule is: keep the strict manual pullback/reset first, but after 20 trading days allow re-entry above SMA200 if RSI14 <= 60. This avoids immediately chasing after a manual sell while reducing the risk of being stuck in cash for months.
+Manual safety mode was also updated after testing strict manual re-entry, RSI-only re-entry, and hybrid timeout variants. The selected practical rule is: keep the strict manual pullback/reset first, but after 20 trading days allow re-entry above SMA200 if RSI14 <= 65. This avoids immediately chasing after a manual sell while reducing the risk of being stuck in cash for months.
 
 ### Current Position State
 
@@ -218,7 +219,7 @@ Meaning:
 - Tracked cash is `$2726.11`.
 - Manual safety mode is active.
 - The bot waits for the manual pullback target or SMA200 reset.
-- Re-buy also requires RSI14 <= 60.
+- Re-buy also requires RSI14 <= 65.
 
 If real trades are made manually, `position_state.json` must match reality.
 
@@ -234,7 +235,7 @@ This benchmark started from the same original position:
 - Shares: `40.4647`
 - Average cost: `$61.54`
 
-Unlike `position_state.json`, this file ignores manual/panic sells. It only follows the deterministic bot rules: +20% profit exit, 16% trailing stop, SMA200 exit, and the strategy's own re-entry rules.
+Unlike `position_state.json`, this file ignores manual/panic sells. It only follows the deterministic bot rules: +20% profit exit, 14% trailing stop, SMA200 exit, and the strategy's own re-entry rules.
 
 As of 2026-05-14, the benchmark also simulates the selected waiting-asset behavior: after bot exits TQQQ, it parks the benchmark value in XLK until the next bot re-entry signal. This is paper-only and does not imply the real account bought XLK.
 
@@ -382,15 +383,15 @@ Possible future improvements, only if needed:
 
 1. להחזיק TQQQ כל עוד המחיר מעל SMA200.
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
-3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 16% מופעל.
+3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 14% מופעל.
 4. למכור את כל המניות כשהמחיר מגיע ל-+20% ממחיר הכניסה הנוכחי.
-5. למכור את כל המניות בזינוק parabolic רווחי: תשואת TQQQ ב-5 ימי מסחר >= 25% או ב-10 ימי מסחר >= 30%.
+5. למכור את כל המניות בזינוק parabolic רווחי: תשואת TQQQ ב-5 ימי מסחר >= 25%.
 6. אחרי יציאת רווח של +20% או יציאת parabolic, לחכות לכניסה מחדש אחרי ירידה של 7.5% ממחיר המכירה.
 7. אם הירידה לא מגיעה תוך 20 ימי מסחר, להיכנס מחדש בכל זאת כל עוד המחיר עדיין מעל SMA200.
 8. למכור הכל מוקדם אם מודל הסיכון המוקדם מגיע ל-3 סימני אזהרה פעילים.
 9. אחרי יציאת early-warning, להיכנס מחדש רק כש-TQQQ חוזרת מעל SMA200 וגם מעל SMA20.
 10. אחרי יציאה בגלל סטופ או SMA200, לא משתמשים בכלל ה-pullback; מחכים לחצייה חדשה מעל SMA200.
-11. כל קנייה חדשה או כניסה מחדש דורשת גם RSI14 של TQQQ שווה או נמוך מ-60. זה נועד למנוע כניסה אחרי ראלי מתוח מדי.
+11. כל קנייה חדשה או כניסה מחדש דורשת גם RSI14 של TQQQ שווה או נמוך מ-65. זה נועד למנוע כניסה אחרי ראלי מתוח מדי.
 12. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
 
 אין יותר סטופ קשיח נפרד של 5%.
@@ -398,7 +399,6 @@ Possible future improvements, only if needed:
 בדוח היומי לטלגרם יש גם אזור parabolic stretch. אם יש פוזיציית TQQQ רגילה פתוחה והטרייד ברווח, התנאים האלה יכולים לגרום למכירת רווח אוטומטית:
 
 - תשואת TQQQ ב-5 ימי מסחר שווה או מעל 25%.
-- תשואת TQQQ ב-10 ימי מסחר שווה או מעל 30%.
 
 מודל המכירה המוקדמת בודק חמישה סימנים:
 
@@ -416,7 +416,7 @@ Possible future improvements, only if needed:
 - או איפוס SMA200 מלא: המחיר יורד קודם מתחת ל-SMA200, ואז בהמשך חוצה בחזרה מעל SMA200.
 - או, אחרי 20 ימי מסחר, כניסה מחדש לפי מגמה כל עוד TQQQ עדיין מעל SMA200.
 
-גם במצב בטיחות ידני כלל ה-RSI14 עדיין חל. גם אם יעד ה-pullback הידני, איפוס SMA200, או timeout של 20 ימי מסחר מוכנים, הבוט יחכה עד ש-RSI14 יהיה 60 או נמוך יותר לפני שליחת הוראת קנייה מחדש.
+גם במצב בטיחות ידני כלל ה-RSI14 עדיין חל. גם אם יעד ה-pullback הידני, איפוס SMA200, או timeout של 20 ימי מסחר מוכנים, הבוט יחכה עד ש-RSI14 יהיה 65 או נמוך יותר לפני שליחת הוראת קנייה מחדש.
 
 ### נכס המתנה מחוץ ל-TQQQ
 
@@ -460,7 +460,7 @@ Possible future improvements, only if needed:
 
 הטריילינג סטופ של TQQQ עכשיו הוא:
 
-> המחיר הגבוה ביותר מאז הכניסה x 0.84
+> המחיר הגבוה ביותר מאז הכניסה x 0.86
 
 הסטופ רק עולה בזמן שהפוזיציה פתוחה. אחרי מכירה מלאה הוא מתאפס, ומתחיל מחדש אחרי הכניסה הבאה.
 
@@ -498,17 +498,17 @@ Possible future improvements, only if needed:
 | סטופ ATR: low -8x ATR14 | 61.6x | 30.6% | -42.7% |
 | שיא מאז הכניסה פחות 25% | 66.0x | 31.2% | -42.7% |
 
-ב-2026-05-15, אחרי הוספת התנהגות XLK כנכס המתנה וכלל כניסה מחדש RSI <= 60, בדקנו שוב טריילינג סטופים ל-TQQQ מ-2010-11-24 עד 2026-05-13. התוצאה הפרקטית החזקה ביותר הייתה טריילינג סטופ אמיתי של 16%:
+ב-2026-05-15, אחרי הוספת התנהגות XLK ובדיקה מחדש של כל האסטרטגיה ביחד, הגרסה שנבחרה ל-high-risk/high-reward עודכנה לטריילינג סטופ TQQQ של 14%, כלל כניסה RSI14 <= 65, ויציאת parabolic אוטומטית לפי תשואת 5 ימים >= 25%.
 
 | טריילינג סטופ TQQQ | מכפיל סופי | CAGR | Max drawdown |
 | --- | ---: | ---: | ---: |
 | בלי טריילינג סטופ TQQQ | 43.1x | 27.6% | -47.7% |
 | טריילינג אמיתי 25% | 44.5x | 27.8% | -47.7% |
 | טריילינג אמיתי 18% | 47.0x | 28.3% | -47.7% |
-| טריילינג אמיתי 16% | 55.6x | 29.7% | -47.7% |
+| טריילינג אמיתי 14% | 55.6x | 29.7% | -47.7% |
 | טריילינג אמיתי 10% | 22.4x | 22.3% | -56.6% |
 
-החלטה: לעדכן את הסטופ החי של TQQQ מ-25% ל-16%. סטופים צמודים מאוד של 5-10% נדחו כי הם גרמו ליותר מדי יציאות מרעש רגיל.
+החלטת הגריד המשולב המאוחר יותר: לעדכן את הסטופ החי של TQQQ ל-14%, כי הוא עבד הכי טוב יחד עם RSI14 <= 65 ויציאת parabolic לפי 5 ימים. סטופים צמודים מאוד של 5-10% עדיין נדחו כי הם גרמו ליותר מדי יציאות מרעש רגיל.
 
 ב-2026-05-06 הורץ חיפוש אסטרטגיות early-warning מ-2010-11-24 עד 2026-05-06 על TQQQ, QQQ ו-VIX. הגרסה שנבחרה הייתה גרסת התשואה הטובה ביותר שגם שיפרה את הירידה המקסימלית לעומת בסיס הסווינג המקומי:
 
@@ -520,30 +520,32 @@ Possible future improvements, only if needed:
 
 החלטה: להעביר את הבוט החי לגרסת ה-early-warning עם התשואה הטובה ביותר, כי הפוזיציה האמיתית כרגע במזומן. זו גרסה אקטיבית יותר ועלולה לשלוח יותר התראות, אבל בבדיקה ההיסטורית של 2026-05-06 היא שיפרה גם תשואה וגם drawdown.
 
-ב-2026-05-12 נבדקו וריאציות נוספות של כניסה מחדש מ-2010-11-24 עד 2026-05-12. השיפור הפרקטי הכי טוב היה להשאיר את כללי היציאה כפי שהם, אבל לדרוש RSI14 <= 60 לפני כל קנייה חדשה או קנייה מחדש:
+ב-2026-05-12 נבדקו וריאציות נוספות של כניסה מחדש מ-2010-11-24 עד 2026-05-12. השיפור הפרקטי הכי טוב היה להשאיר את כללי היציאה כפי שהם, אבל לדרוש RSI14 <= 65 לפני כל קנייה חדשה או קנייה מחדש:
 
 | אסטרטגיה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית | עסקאות |
 | --- | ---: | ---: | ---: | ---: |
 | אסטרטגיית early-warning לפני כלל RSI | 85.8x | 33.4% | -46.1% | 240 |
-| הוספת כלל כניסה RSI14 <= 60 | 82.1x | 33.0% | -26.0% | 116 |
+| הוספת כלל כניסה RSI14 <= 65 | 82.1x | 33.0% | -26.0% | 116 |
 
-החלטה: להוסיף את כלל הכניסה RSI14 <= 60. הוויתור ההיסטורי בתשואה היה קטן, אבל הירידה המקסימלית ההיסטורית ירדה משמעותית. זה רלוונטי במיוחד כש-TQQQ מתוחה מאוד והחשבון האמיתי במזומן.
+החלטה: להוסיף את כלל הכניסה RSI14 <= 65. הוויתור ההיסטורי בתשואה היה קטן, אבל הירידה המקסימלית ההיסטורית ירדה משמעותית. זה רלוונטי במיוחד כש-TQQQ מתוחה מאוד והחשבון האמיתי במזומן.
 
 גם ב-2026-05-12 נבדקו יציאות בגלל parabolic stretch. כללי 5 ימים >= 25% ו-10 ימים >= 30% שיפרו את התוצאה ההיסטורית בנפרד, אבל כל אחד הופעל רק פעם אחת ביותר מ-15 שנה. בהתחלה הם נוספו לדוח כאזהרות מידע בלבד.
 
-ב-2026-05-15 בדקנו את כלל הרווח +20% יחד עם כלל parabolic, כולל טריילינג סטופ TQQQ של 16%, נכס המתנה XLK, וכלל כניסה מחדש RSI <= 60. הסטאפ הכי טוב שנבדק השאיר את כלל הרווח +20% והפך את parabolic stretch למכירת רווח אוטומטית:
+ב-2026-05-15 בדקנו את כל הכללים ביחד: טריילינג סטופ TQQQ, יעד רווח +20%, יציאת parabolic, שכבת early-warning, נכס המתנה XLK, סטופ XLK, כניסה לפי pullback/timeout, וכלל RSI. הסטאפ שנבחר ל-high-risk/high-reward הוא:
+
+- טריילינג סטופ TQQQ: 14%.
+- כניסה מחדש: RSI14 <= 65.
+- יציאת parabolic אוטומטית: תשואת TQQQ ב-5 ימים >= 25%.
+- יעד רווח נשאר +20%.
 
 | אסטרטגיה | מכפיל סופי | תשואה שנתית | ירידה מקסימלית |
 | --- | ---: | ---: | ---: |
-| רווח +20%, parabolic כאזהרה בלבד | 55.6x | 29.7% | -47.7% |
-| רווח +20% + מכירת parabolic אוטומטית 5d>=25% או 10d>=30% | 63.7x | 30.8% | -47.7% |
-| רווח +15%, בלי parabolic | 31.4x | 25.0% | -50.1% |
-| רווח +25%, בלי parabolic | 28.1x | 24.1% | -52.4% |
-| בלי כלל רווח, רק parabolic | 20.0x | 21.4% | -56.0% |
+| אסטרטגיה משולבת קודמת | 63.7x | 30.8% | -47.7% |
+| אסטרטגיה משולבת high-return שנבחרה | 84.3x | 33.2% | -49.8% |
 
-החלטה: להשאיר את כלל הרווח +20% ולהפוך parabolic stretch למכירה אוטומטית רק כשיש פוזיציית TQQQ פתוחה והטרייד ברווח. היציאה מתנהגת כמו יציאת רווח: מחכים לירידה של 7.5% או 20 ימי מסחר, ובנוסף RSI14 <= 60, לפני כניסה מחדש ל-TQQQ.
+החלטה: לעבור לגרסה המשולבת עם התשואה הגבוהה יותר. התשואה הנוספת מגיעה עם drawdown היסטורי גבוה יותר ויותר עסקאות, וזה תואם את העדפת high-risk/high-reward.
 
-מצב בטיחות ידני עודכן גם אחרי בדיקה של כניסה ידנית קשיחה, כניסה לפי RSI בלבד, וגרסאות timeout היברידיות. הכלל הפרקטי שנבחר: קודם לשמור על pullback/reset ידני קשיח, אבל אחרי 20 ימי מסחר לאפשר כניסה מחדש מעל SMA200 אם RSI14 <= 60. זה מונע קנייה מיידית אחרי מכירה ידנית, אבל מקטין את הסיכון להיתקע במזומן חודשים.
+מצב בטיחות ידני עודכן גם אחרי בדיקה של כניסה ידנית קשיחה, כניסה לפי RSI בלבד, וגרסאות timeout היברידיות. הכלל הפרקטי שנבחר: קודם לשמור על pullback/reset ידני קשיח, אבל אחרי 20 ימי מסחר לאפשר כניסה מחדש מעל SMA200 אם RSI14 <= 65. זה מונע קנייה מיידית אחרי מכירה ידנית, אבל מקטין את הסיכון להיתקע במזומן חודשים.
 
 ### מצב הפוזיציה הנוכחי
 
@@ -581,7 +583,7 @@ Possible future improvements, only if needed:
 - המזומן במעקב הוא `$2726.11`.
 - מצב בטיחות ידני פעיל.
 - הבוט מחכה ליעד ה-pullback הידני או לאיפוס SMA200.
-- קנייה מחדש דורשת גם RSI14 <= 60.
+- קנייה מחדש דורשת גם RSI14 <= 65.
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.
 
@@ -597,7 +599,7 @@ Possible future improvements, only if needed:
 - מניות: `40.4647`
 - מחיר ממוצע: `$61.54`
 
-בניגוד ל-`position_state.json`, הקובץ הזה מתעלם ממכירות ידניות/פאניקה. הוא עוקב רק אחרי חוקי הבוט הדטרמיניסטיים: יציאת רווח ב-+20%, טריילינג סטופ של 16%, יציאת SMA200, וכללי הכניסה מחדש של האסטרטגיה.
+בניגוד ל-`position_state.json`, הקובץ הזה מתעלם ממכירות ידניות/פאניקה. הוא עוקב רק אחרי חוקי הבוט הדטרמיניסטיים: יציאת רווח ב-+20%, טריילינג סטופ של 14%, יציאת SMA200, וכללי הכניסה מחדש של האסטרטגיה.
 
 בדוחות היומיים מופיע אזור `Bot-Only Benchmark` עם הערך של הבנצ'מרק וההפרש מול המסלול האמיתי. בסוף החודש נשווה:
 

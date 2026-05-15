@@ -18,7 +18,7 @@ PARKING_TICKER = "XLK"
 STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
-TRAILING_STOP_PCT = 0.16
+TRAILING_STOP_PCT = 0.14
 PARKING_TRAILING_STOP_PCT = 0.05
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.075
@@ -27,9 +27,9 @@ MANUAL_REBUY_TIMEOUT_DAYS = 20
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
-REENTRY_RSI_MAX = 60
+REENTRY_RSI_MAX = 65
 PARABOLIC_RET5_WARNING_PCT = 0.25
-PARABOLIC_RET10_WARNING_PCT = 0.30
+PARABOLIC_RET10_WARNING_PCT = None
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -669,7 +669,7 @@ def calculate_parabolic_stretch(ticker):
     active = []
     if ret5 >= PARABOLIC_RET5_WARNING_PCT:
         active.append(f"5d return {ret5:+.1%}")
-    if ret10 >= PARABOLIC_RET10_WARNING_PCT:
+    if PARABOLIC_RET10_WARNING_PCT is not None and ret10 >= PARABOLIC_RET10_WARNING_PCT:
         active.append(f"10d return {ret10:+.1%}")
 
     return {

@@ -296,6 +296,9 @@ def save_bot_strategy_state(state):
 
 
 def fetch_market_data():
+    from io import StringIO
+    import time as time_module
+
     import pandas as pd
     import yfinance as yf
 
@@ -347,14 +350,141 @@ def fetch_market_data():
 
         return daily, f"1m bar {latest_bar_utc.isoformat()}", live_age
 
-    ticker = normalize_columns(yf.download(TICKER, period="2y", interval="1d", auto_adjust=True, progress=False))
+    def yahoo_download(symbol, period, interval):
+        last_error = None
+        for attempt in range(3):
+            try:
+                df = normalize_columns(
+                    yf.download(symbol, period=period, interval=interval, auto_adjust=True, progress=False)
+                )
+            except Exception as exc:
+                last_error = exc
+                df = pd.DataFrame()
+
+            if not df.empty:
+                return df
+
+            if attempt < 2:
+                time_module.sleep(2 * (attempt + 1))
+
+        if last_error:
+            print(f"[DATA] Yahoo download failed for {symbol} {period}/{interval}: {last_error}")
+        else:
+            print(f"[DATA] Yahoo download returned no rows for {symbol} {period}/{interval}")
+        return pd.DataFrame()
+
+    def stooq_symbol(symbol):
+        if symbol == "^VIX":
+            return "^vix"
+        return f"{symbol.lower()}.us"
+
+    def fetch_stooq_daily(symbol):
+        end_day = datetime.now(MARKET_TZ).date()
+        start_day = end_day - timedelta(days=365 * 3)
+        params = {
+            "s": stooq_symbol(symbol),
+            "d1": start_day.strftime("%Y%m%d"),
+            "d2": end_day.strftime("%Y%m%d"),
+            "i": "d",
+        }
+        try:
+            response = requests.get("https://stooq.com/q/d/l/", params=params, timeout=20)
+            response.raise_for_status()
+            df = pd.read_csv(StringIO(response.text))
+        except Exception as exc:
+            print(f"[DATA] Stooq daily fallback failed for {symbol}: {exc}")
+            return pd.DataFrame()
+
+        if df.empty or "Date" not in df or "Close" not in df:
+            print(f"[DATA] Stooq daily fallback returned no rows for {symbol}")
+            return pd.DataFrame()
+
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df = df.dropna(subset=["Date", "Close"]).set_index("Date").sort_index()
+        return df[["Open", "High", "Low", "Close", "Volume"]].apply(pd.to_numeric, errors="coerce").dropna(subset=["Close"])
+
+    def fetch_stooq_quote(symbol):
+        params = {"s": stooq_symbol(symbol), "f": "sd2t2ohlcv", "h": "", "e": "csv"}
+        try:
+            response = requests.get("https://stooq.com/q/l/", params=params, timeout=20)
+            response.raise_for_status()
+            quote = pd.read_csv(StringIO(response.text))
+        except Exception as exc:
+            print(f"[DATA] Stooq quote fallback failed for {symbol}: {exc}")
+            return pd.DataFrame()
+
+        if quote.empty or "Close" not in quote:
+            print(f"[DATA] Stooq quote fallback returned no rows for {symbol}")
+            return pd.DataFrame()
+
+        row = quote.iloc[0]
+        close = pd.to_numeric(row.get("Close"), errors="coerce")
+        if pd.isna(close):
+            print(f"[DATA] Stooq quote fallback returned invalid close for {symbol}")
+            return pd.DataFrame()
+
+        quote_day = pd.to_datetime(row.get("Date"), errors="coerce")
+        if pd.isna(quote_day):
+            quote_day = pd.Timestamp(datetime.now(MARKET_TZ).date())
+
+        def numeric_or_close(name):
+            value = pd.to_numeric(row.get(name), errors="coerce")
+            return float(close if pd.isna(value) else value)
+
+        return pd.DataFrame(
+            [{
+                "Open": numeric_or_close("Open"),
+                "High": numeric_or_close("High"),
+                "Low": numeric_or_close("Low"),
+                "Close": float(close),
+                "Volume": numeric_or_close("Volume"),
+            }],
+            index=[pd.Timestamp(quote_day.date())],
+        )
+
+    def daily_data(symbol):
+        df = yahoo_download(symbol, period="2y", interval="1d")
+        if not df.empty:
+            return df
+        fallback = fetch_stooq_daily(symbol)
+        if not fallback.empty:
+            print(f"[DATA] Using Stooq daily fallback for {symbol}")
+        return fallback
+
+    def intraday_data(symbol):
+        return yahoo_download(symbol, period="5d", interval="1m")
+
+    def overlay_quote_bar(daily, quote, symbol):
+        if quote.empty:
+            return daily, "daily", None
+
+        quote_day = date_only(quote.index[-1])
+        quote_row = quote.iloc[-1]
+        daily_dates = daily.index.map(date_only)
+        if quote_day in set(daily_dates):
+            row_index = daily.index[daily_dates == quote_day][-1]
+            for column in ["Open", "High", "Low", "Close", "Volume"]:
+                daily.loc[row_index, column] = float(quote_row[column])
+        else:
+            daily.loc[pd.Timestamp(quote_day)] = {column: float(quote_row[column]) for column in ["Open", "High", "Low", "Close", "Volume"]}
+            daily = daily.sort_index()
+
+        return daily, f"stooq quote {symbol}", None
+
+    def overlay_best_available(daily, intraday, symbol):
+        daily, source, age = overlay_live_bar(daily, intraday)
+        if source != "daily":
+            return daily, source, age
+        return overlay_quote_bar(daily, fetch_stooq_quote(symbol), symbol)
+
+    ticker = daily_data(TICKER)
 
     if ticker.empty:
         raise RuntimeError(f"No market data returned for {TICKER}")
 
-    qqq = normalize_columns(yf.download("QQQ", period="2y", interval="1d", auto_adjust=True, progress=False))
-    parking = normalize_columns(yf.download(PARKING_TICKER, period="2y", interval="1d", auto_adjust=True, progress=False))
-    vix = normalize_columns(yf.download("^VIX", period="2y", interval="1d", auto_adjust=True, progress=False))
+    qqq = daily_data("QQQ")
+    parking = daily_data(PARKING_TICKER)
+    vix = daily_data("^VIX")
     if qqq.empty:
         raise RuntimeError("No market data returned for QQQ")
     if parking.empty:
@@ -362,25 +492,29 @@ def fetch_market_data():
     if vix.empty:
         raise RuntimeError("No market data returned for ^VIX")
 
-    intraday = yf.download(TICKER, period="5d", interval="1m", auto_adjust=True, progress=False)
-    qqq_intraday = yf.download("QQQ", period="5d", interval="1m", auto_adjust=True, progress=False)
-    parking_intraday = yf.download(PARKING_TICKER, period="5d", interval="1m", auto_adjust=True, progress=False)
-    vix_intraday = yf.download("^VIX", period="5d", interval="1m", auto_adjust=True, progress=False)
+    intraday = intraday_data(TICKER)
+    qqq_intraday = intraday_data("QQQ")
+    parking_intraday = intraday_data(PARKING_TICKER)
+    vix_intraday = intraday_data("^VIX")
 
     live_source = "daily"
     live_age = None
     market_open, _ = is_market_open(datetime.now(UTC))
-    ticker, live_source, live_age = overlay_live_bar(ticker, intraday)
-    qqq, qqq_live_source, qqq_live_age = overlay_live_bar(qqq, qqq_intraday)
-    parking, parking_live_source, parking_live_age = overlay_live_bar(parking, parking_intraday)
-    vix, vix_live_source, vix_live_age = overlay_live_bar(vix, vix_intraday)
+    ticker, live_source, live_age = overlay_best_available(ticker, intraday, TICKER)
+    qqq, qqq_live_source, qqq_live_age = overlay_best_available(qqq, qqq_intraday, "QQQ")
+    parking, parking_live_source, parking_live_age = overlay_best_available(parking, parking_intraday, PARKING_TICKER)
+    vix, vix_live_source, vix_live_age = overlay_best_available(vix, vix_intraday, "^VIX")
 
-    if market_open and (intraday.empty or live_age is None or live_age > MAX_LIVE_PRICE_AGE):
+    if market_open and live_source == "daily":
         age_text = "unavailable" if live_age is None else str(live_age)
-        raise RuntimeError(f"Live Yahoo price is stale during market hours: {age_text}")
-    if market_open and (parking_intraday.empty or parking_live_age is None or parking_live_age > MAX_LIVE_PRICE_AGE):
+        raise RuntimeError(f"Live price is stale during market hours: {age_text}")
+    if market_open and live_age is not None and live_age > MAX_LIVE_PRICE_AGE:
+        raise RuntimeError(f"Live price is stale during market hours: {live_age}")
+    if market_open and parking_live_source == "daily":
         age_text = "unavailable" if parking_live_age is None else str(parking_live_age)
-        raise RuntimeError(f"Live Yahoo {PARKING_TICKER} price is stale during market hours: {age_text}")
+        raise RuntimeError(f"Live {PARKING_TICKER} price is stale during market hours: {age_text}")
+    if market_open and parking_live_age is not None and parking_live_age > MAX_LIVE_PRICE_AGE:
+        raise RuntimeError(f"Live {PARKING_TICKER} price is stale during market hours: {parking_live_age}")
 
     ticker["SMA200"] = ticker["Close"].rolling(window=200).mean()
     ticker["SMA20"] = ticker["Close"].rolling(window=20).mean()

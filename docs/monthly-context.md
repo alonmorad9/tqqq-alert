@@ -312,7 +312,7 @@ Daily reports:
 - Send a full Telegram status message.
 - Include current price, SMA200, trailing stop, position mode, cash, shares, total value, P&L, next profit target, and pullback re-entry target if waiting after a profit exit.
 - If there is no open TQQQ position, include XLK waiting-asset guidance and any tracked XLK shares/value.
-- Include the price source. During market hours, the bot overlays Yahoo's latest 1-minute TQQQ bar on top of the daily history so it does not rely on yesterday's close. If the latest 1-minute price is stale by more than 30 minutes while the market is open, the run fails and sends a workflow-failure alert instead of trading on stale data.
+- Include the price source. During market hours, the bot first overlays Yahoo's latest 1-minute bar on top of the daily history so it does not rely on yesterday's close. If Yahoo/yfinance is rate-limited or returns empty data, the bot retries and then falls back to Stooq daily/quote data. If both providers fail or only stale daily data is available during market hours, the run fails and sends a workflow-failure alert instead of trading blindly.
 - Include an advisory risk context section inspired by the TradingAgents idea: trend, RSI momentum, ATR volatility, a 4x ATR reference stop, and risk level.
 - This risk context is not a trading trigger. Buy/sell/profit-taking instructions still come only from the deterministic strategy rules.
 
@@ -361,7 +361,7 @@ Avoid changing the strategy numbers too often. The current setup was chosen beca
 
 Possible future improvements, only if needed:
 
-- Add a second price data source as fallback if Yahoo/yfinance becomes unreliable.
+- Keep monitoring Yahoo/yfinance and Stooq reliability. Stooq is now the backup provider after Yahoo rate-limit failures.
 - Add a weekly summary report.
 - Add a small dashboard or log file.
 - Log the daily risk context over time and later backtest whether risk warnings actually helped.
@@ -662,7 +662,7 @@ Worker:
 
 - שולחים הודעת סטטוס מלאה לטלגרם.
 - כוללים מחיר נוכחי, SMA200, טריילינג סטופ, מצב פוזיציה, מזומן, מניות, ערך כולל, רווח/הפסד, יעד הרווח הבא, ויעד כניסה מחדש אם מחכים אחרי יציאת רווח.
-- כוללים את מקור המחיר. בזמן המסחר, הבוט משתמש בבר 1 דקה האחרון של Yahoo על גבי ההיסטוריה היומית, כדי לא להסתמך בטעות על מחיר הסגירה של אתמול. אם מחיר ה-1 דקה האחרון ישן ביותר מ-30 דקות בזמן שהשוק פתוח, ההרצה נכשלת ושולחת התראת כשל במקום לפעול על מחיר לא עדכני.
+- כוללים את מקור המחיר. בזמן המסחר, הבוט קודם משתמש בבר 1 דקה האחרון של Yahoo על גבי ההיסטוריה היומית, כדי לא להסתמך בטעות על מחיר הסגירה של אתמול. אם Yahoo/yfinance נחסם בגלל rate limit או מחזיר נתונים ריקים, הבוט מנסה שוב ואז עובר לגיבוי Stooq עבור היסטוריה/ציטוט. אם שני המקורות נכשלים או שיש רק מחיר יומי ישן בזמן המסחר, ההרצה נכשלת ושולחת התראת כשל במקום לפעול עיוור.
 - כוללים גם אזור הקשר סיכון בהשראת רעיון TradingAgents: מגמה, מומנטום RSI, תנודתיות ATR, סטופ ייחוס של 4x ATR, ורמת סיכון.
 - הקשר הסיכון הוא מידע בלבד ולא טריגר למסחר. הוראות קנייה/מכירה/לקיחת רווח עדיין מגיעות רק מכללי האסטרטגיה הדטרמיניסטיים.
 
@@ -708,7 +708,7 @@ Worker:
 
 שיפורים אפשריים בעתיד, רק אם יהיה צורך:
 
-- להוסיף מקור מחירים נוסף לגיבוי אם Yahoo/yfinance יהפוך ללא אמין.
+- להמשיך לעקוב אחרי האמינות של Yahoo/yfinance ו-Stooq. Stooq הוא עכשיו מקור הגיבוי אחרי כשלי rate limit של Yahoo.
 - להוסיף דוח שבועי.
 - להוסיף דשבורד קטן או קובץ לוג.
 - לשמור את הקשר הסיכון היומי לאורך זמן, ואז לבדוק היסטורית אם אזהרות הסיכון באמת עזרו.

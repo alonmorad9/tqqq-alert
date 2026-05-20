@@ -1,6 +1,8 @@
 # TQQQ Strategy Research Handoff
 
-Last updated: 2026-05-14
+Last updated: 2026-05-20
+
+Latest decision, 2026-05-20: the live TQQQ bot was switched to the best-return no-XLK combined rule set from the saved historical grid. This overrides older notes in this file that mention a 14% stop, RSI <= 65, 5-day-only parabolic exit, or XLK as the selected waiting asset.
 
 ## Purpose
 
@@ -13,14 +15,14 @@ The live repo is an automated TQQQ alert bot. It sends Telegram instructions, bu
 Asset:
 
 - Execution asset: `TQQQ`
-- Waiting asset while out of TQQQ: `XLK`
+- Waiting asset while out of TQQQ: cash
 - Long only
 
 Entry:
 
 - Normal trend entry is a TQQQ cross above its 200-day simple moving average (`SMA200`).
 - After an early-warning exit, re-enter when TQQQ is back above both `SMA200` and `SMA20`.
-- Every fresh buy or re-buy also requires TQQQ `RSI14 <= 65` to avoid chasing stretched rallies.
+- Every fresh buy or re-buy also requires TQQQ `RSI14 <= 60` to avoid chasing stretched rallies.
 
 Full exit:
 
@@ -29,18 +31,18 @@ Full exit:
 
 Trailing stop:
 
-- Stop is 14% below the highest high since entry.
-- Formula: `highest_high_since_entry * 0.86`
+- Stop is 25% below the highest high since entry.
+- Formula: `highest_high_since_entry * 0.75`
 - It only moves upward while a position is open.
 - It resets after a full exit and starts again after the next entry.
 
 Swing profit cycle:
 
 - Sell all shares at +20% from the current entry price.
-- Sell all shares on a profitable parabolic stretch: TQQQ 5-day return >= 25%.
+- Sell all shares on a profitable parabolic stretch: TQQQ 5-day return >= 25% or 10-day return >= 30%.
 - After a +20% profit exit or parabolic profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
 - If the pullback does not happen within 20 trading days, re-buy anyway as long as TQQQ is still above SMA200.
-- Every swing re-buy also requires `RSI14 <= 65`.
+- Every swing re-buy also requires `RSI14 <= 60`.
 - After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
 - After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
@@ -64,7 +66,7 @@ Manual safety mode:
   - current price is at least 7.5% below the manual sell price and still above SMA200, or
   - price went below SMA200 after the manual exit and later crosses back above SMA200, or
   - 20 trading days passed and TQQQ is still above SMA200.
-- The `RSI14 <= 65` re-entry guard still applies to all manual safety re-entry paths.
+- The `RSI14 <= 60` re-entry guard still applies to all manual safety re-entry paths.
 
 Waiting asset:
 
@@ -82,33 +84,28 @@ Waiting asset:
 | QLD | 218.9x | 41.7% | -66.5% | Too leveraged |
 | USD | 308.2x | 44.9% | -79.0% | Too dangerous |
 
-- Real account behavior: XLK is manual only. The bot shows XLK guidance and tracks it only if the user records it.
-- Manual modes:
-  - `manual_parking_bought` with `manual_price=<XLK buy price>` and optional `manual_shares=<XLK shares>`.
-  - `manual_parking_sold` with `manual_price=<XLK sell price>`.
-- XLK sell rules:
-  - Sell XLK and move back to TQQQ when the normal TQQQ re-entry signal triggers.
-  - Sell XLK and wait in cash if TQQQ falls below SMA200.
-  - Sell XLK and wait in cash if the early-drop risk model reaches 3 active warning signs.
-  - Sell XLK and wait in cash if XLK hits its own 5% ratcheting trailing stop from the highest XLK high since the waiting-asset entry.
-- Bot-only benchmark behavior: automatically simulates XLK parking after bot exits TQQQ only if TQQQ is still above SMA200 and early-drop risk is not high. It returns to TQQQ on bot re-entry and moves XLK to cash if TQQQ becomes defensive or XLK hits its 5% trailing stop. This keeps the benchmark as a pure "follow the bot" path, not a manual path.
+- Latest full-combined-grid decision: use cash as the selected waiting asset. XLK is no longer recommended for new waiting-asset buys in the live TQQQ bot.
+- Legacy real account behavior: if an old XLK waiting position is already tracked, the bot can still show it and `manual_parking_sold` can still record the sale.
+- `manual_parking_bought` is disabled while the selected strategy is cash waiting mode.
+- Bot-only benchmark behavior: stays in cash while out of TQQQ and no longer opens new XLK waiting positions.
 
 Current tracked real position state:
 
 ```json
 {
   "avg_cost": null,
-  "cash": 2726.11,
+  "cash": 26.13,
   "early_exit_date": null,
   "early_exit_price": null,
   "entry_date": null,
   "highest_high_since_entry": null,
   "last_profit_sell_price": null,
-  "last_action": "manual_sold",
+  "last_action": "manual_xlk_bought",
   "manual_exit_mode": true,
   "manual_exit_price": 67.37,
-  "parking_avg_cost": null,
-  "parking_shares": 0.0,
+  "parking_avg_cost": 178.62,
+  "parking_highest_high_since_entry": 178.7,
+  "parking_shares": 15.1158,
   "parking_ticker": "XLK",
   "position_open": false,
   "profit_exit_date": null,
@@ -122,8 +119,8 @@ Current tracked real position state:
 Current implied levels:
 
 - Manual safety mode is active.
-- Re-buy condition from the current cash state: manual pullback target or SMA200 reset, plus `RSI14 <= 65`.
-- If the human buys XLK while waiting, it should be recorded with `manual_parking_bought`.
+- Re-buy condition from the current manual safety state: manual pullback target, SMA200 reset, or 20-trading-day timeout, plus `RSI14 <= 60`.
+- Because the selected strategy now waits in cash, the old tracked XLK position should be sold and recorded with `manual_parking_sold` unless a TQQQ re-entry signal arrives first.
 - No active trailing stop while out of position.
 - No active profit target while out of position.
 
@@ -134,7 +131,7 @@ A separate file, `bot_strategy_state.json`, tracks the paper benchmark for the o
 - It starts from the same original TQQQ position.
 - It ignores manual/panic sells.
 - It follows only deterministic bot strategy rules.
-- It now also follows the selected bot waiting-asset rule by simulating XLK while out of TQQQ.
+- It now follows the selected bot waiting-asset rule by staying in cash while out of TQQQ.
 - It is updated during normal bot checks.
 
 Use this at month-end to compare:
@@ -202,7 +199,7 @@ Conclusion:
   - 18% true ratchet: `47.0x`, `28.3%` CAGR, `-47.7%` max drawdown.
   - 14% true ratchet: `55.6x`, `29.7%` CAGR, `-47.7%` max drawdown.
   - 10% true ratchet: `22.4x`, `22.3%` CAGR, `-56.6%` max drawdown.
-- Current selected TQQQ stop is now true 14% ratchet from highest high since entry.
+- Superseded on 2026-05-20: current selected TQQQ stop is now a true 25% ratchet from highest high since entry.
 - Very tight 5-10% TQQQ stops were rejected because they caused too many noisy exits.
 
 Trend filters:
@@ -373,7 +370,7 @@ Questions to answer:
 
 ## Current Recommendation
 
-The live TQQQ bot has been changed to the +20% swing profit cycle plus an optimized early-warning exit layer, with an RSI14 <= 65 guard on all fresh buys and re-buys.
+The live TQQQ bot has been changed to the +20% swing profit cycle plus an optimized early-warning exit layer, with an RSI14 <= 60 guard on all fresh buys and re-buys.
 
 On 2026-05-06, an early-warning search tested TQQQ, QQQ, and VIX signals from 2010-11-24 through 2026-05-06. The selected live rule sells all when at least 3 of these 5 conditions are active:
 
@@ -390,13 +387,13 @@ Historical comparison in that local test:
 | Current swing baseline in this test | 36.7x | 26.3% | -49.5% | 164 | 0 |
 | Selected early-warning strategy | 85.8x | 33.4% | -46.1% | 240 | 49 |
 
-The real account is currently in cash after the 2026-05-05 manual sell. Manual safety mode is active, so the real path waits for the manual pullback target, SMA200 reset, or 20-trading-day timeout, plus RSI14 <= 65.
+The real account is in manual safety mode after the 2026-05-05 manual sell. The real path waits for the manual pullback target, SMA200 reset, or 20-trading-day timeout, plus RSI14 <= 60.
 
-On 2026-05-12, extra variants were tested from 2010-11-24 through 2026-05-12. The RSI14 <= 65 re-entry guard reduced historical max drawdown from -46.1% to -26.0% while keeping the final multiple close to the previous winner: 82.1x vs 85.8x. This guard was added because the real account is currently in cash and TQQQ is stretched.
+On 2026-05-12, extra variants were tested from 2010-11-24 through 2026-05-12. The RSI14 <= 65 re-entry guard reduced historical max drawdown from -46.1% to -26.0% while keeping the final multiple close to the previous winner: 82.1x vs 85.8x. This was later superseded by the 2026-05-20 full combined best-return grid, which selected RSI14 <= 60.
 
 Parabolic stretch exits were also checked. TQQQ 5-day return >= 25% and 10-day return >= 30% improved the backtest when used as sell rules, but each fired only once in more than 15 years. They were initially added to the Telegram report as advisory-only warnings.
 
-On 2026-05-15, the full combined rules were tested together: TQQQ trailing stop, +20% profit target, parabolic exit, early-warning layer, XLK waiting asset, XLK stop, pullback/timeout re-entry, and RSI guard. The selected high-risk/high-reward setup is:
+On 2026-05-15, the full combined rules were tested together: TQQQ trailing stop, +20% profit target, parabolic exit, early-warning layer, XLK waiting asset, XLK stop, pullback/timeout re-entry, and RSI guard. That now-superseded setup was:
 
 - TQQQ trailing stop: 14%.
 - Re-entry RSI cap: RSI14 <= 65.
@@ -410,6 +407,26 @@ On 2026-05-15, the full combined rules were tested together: TQQQ trailing stop,
 
 Decision: switch to the high-return selected combined strategy. The extra return comes with higher historical drawdown and more trades, matching the high-risk/high-reward preference.
 
-Manual safety re-entry was updated after checking strict manual, RSI-only, and hybrid timeout policies. The practical rule is strict first, then after 20 trading days allow re-entry above SMA200 if RSI14 <= 65. This is meant to avoid months in cash after a manual sell without allowing immediate chase-buying.
+On 2026-05-20, the saved full combined grid was rechecked against the actual repo constants. The best-return no-XLK rule set was selected:
+
+- TQQQ trailing stop: 25%.
+- Profit target: +20% sell all.
+- Re-buy pullback: -7.5% from the exit price.
+- Re-buy timeout: 20 trading days.
+- Manual safety timeout: 20 trading days.
+- Re-entry RSI cap: RSI14 <= 60.
+- Parabolic exit: 5-day TQQQ return >= 25% or 10-day TQQQ return >= 30%.
+- Waiting asset: cash.
+- Early-warning exit: keep the current 3-of-5 model.
+
+Saved historical result from 2010-11-24 through 2026-05-13:
+
+| Strategy | Final | CAGR | Max DD | Trades |
+| --- | ---: | ---: | ---: | ---: |
+| 25% stop, RSI60, 5d/10d parabolic, cash | 93.8x | 34.1% | -46.8% | 194 |
+
+Decision: switch the live bot to this best-return no-XLK rule set. Older XLK tracking remains only as legacy support until any existing tracked XLK position is sold.
+
+Manual safety re-entry was updated after checking strict manual, RSI-only, and hybrid timeout policies. The practical rule is strict first, then after 20 trading days allow re-entry above SMA200 if RSI14 <= 60. This is meant to avoid months in cash after a manual sell without allowing immediate chase-buying.
 
 The current TQQQ strategy is more active than the previous versions. Watch the next month for whether the early-warning layer creates too many false exits during strong trends.

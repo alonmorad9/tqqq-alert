@@ -13,12 +13,13 @@ SHARES = 40.4647
 AVG_COST = 61.54
 TICKER = "TQQQ"
 PARKING_TICKER = "XLK"
+WAITING_ASSET_ENABLED = False
 # ──────────────────────────────────────────────────────────
 
 STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
-TRAILING_STOP_PCT = 0.14
+TRAILING_STOP_PCT = 0.25
 PARKING_TRAILING_STOP_PCT = 0.05
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.075
@@ -27,9 +28,9 @@ MANUAL_REBUY_TIMEOUT_DAYS = 20
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
-REENTRY_RSI_MAX = 65
+REENTRY_RSI_MAX = 60
 PARABOLIC_RET5_WARNING_PCT = 0.25
-PARABOLIC_RET10_WARNING_PCT = None
+PARABOLIC_RET10_WARNING_PCT = 0.30
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -239,7 +240,7 @@ def default_state():
         "avg_cost": AVG_COST,
         "shares": SHARES,
         "cash": 0.0,
-        "parking_ticker": PARKING_TICKER,
+        "parking_ticker": PARKING_TICKER if WAITING_ASSET_ENABLED else None,
         "parking_shares": 0.0,
         "parking_avg_cost": None,
         "parking_highest_high_since_entry": None,
@@ -574,7 +575,7 @@ def parking_value(state, ticker):
 
 def clear_parking_fields():
     return {
-        "parking_ticker": PARKING_TICKER,
+        "parking_ticker": PARKING_TICKER if WAITING_ASSET_ENABLED else None,
         "parking_shares": 0.0,
         "parking_avg_cost": None,
         "parking_highest_high_since_entry": None,
@@ -582,6 +583,11 @@ def clear_parking_fields():
 
 
 def park_cash_in_benchmark(state, ticker, cash):
+    if not WAITING_ASSET_ENABLED:
+        state.update(clear_parking_fields())
+        state["cash"] = round(cash, 2)
+        return cash
+
     price = parking_price(ticker)
     if cash <= 0 or price <= 0:
         return cash
@@ -882,7 +888,10 @@ def update_bot_strategy_benchmark(ticker):
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
     hit_parking_trailing_stop = parking_shares > 0 and parking_trailing_stop is not None and parking_price(ticker) < parking_trailing_stop
-    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"] or hit_parking_trailing_stop)
+    hit_parking_disabled_exit = parking_shares > 0 and not WAITING_ASSET_ENABLED
+    hit_parking_defensive_exit = parking_shares > 0 and (
+        hit_parking_disabled_exit or current_price < sma200 or early_warning["hit"] or hit_parking_trailing_stop
+    )
     hit_profit_target = (
         position_open
         and shares > 0
@@ -916,7 +925,11 @@ def update_bot_strategy_benchmark(ticker):
 
     if not position_open and hit_parking_defensive_exit:
         cash = unpark_benchmark_to_cash(state, ticker, cash)
-        action = "benchmark_sell_xlk_trailing_stop" if hit_parking_trailing_stop else "benchmark_sell_xlk_defensive"
+        action = "benchmark_sell_xlk_strategy_cash"
+        if hit_parking_trailing_stop:
+            action = "benchmark_sell_xlk_trailing_stop"
+        elif not hit_parking_disabled_exit:
+            action = "benchmark_sell_xlk_defensive"
         state["last_action"] = action
         state_changed = True
     elif position_open and (hit_trailing_stop or crossed_below_sma):
@@ -1028,7 +1041,7 @@ def update_bot_strategy_benchmark(ticker):
             })
             state_changed = True
 
-    can_hold_parking_asset = current_price > sma200 and not early_warning["hit"]
+    can_hold_parking_asset = WAITING_ASSET_ENABLED and current_price > sma200 and not early_warning["hit"]
     if (
         not bool(state.get("position_open", False))
         and can_hold_parking_asset
@@ -1152,7 +1165,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
     hit_parking_trailing_stop = parking_shares > 0 and parking_trailing_stop is not None and current_parking_price < parking_trailing_stop
-    hit_parking_defensive_exit = parking_shares > 0 and (current_price < sma200 or early_warning["hit"] or hit_parking_trailing_stop)
+    hit_parking_disabled_exit = parking_shares > 0 and not WAITING_ASSET_ENABLED
+    hit_parking_defensive_exit = parking_shares > 0 and (
+        hit_parking_disabled_exit or current_price < sma200 or early_warning["hit"] or hit_parking_trailing_stop
+    )
     hit_profit_target = (
         position_open
         and shares > 0
@@ -1216,6 +1232,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
 
     if not position_open and hit_parking_defensive_exit:
         action = f"🅿️ SELL {PARKING_TICKER} — WAIT IN CASH"
+        if hit_parking_disabled_exit:
+            instruction_lines.append("Reason: the selected TQQQ strategy now uses cash while waiting, not a waiting asset.")
         if hit_parking_trailing_stop:
             instruction_lines.append(f"Reason: {PARKING_TICKER} 5% trailing stop hit (${parking_trailing_stop:.2f}).")
         if current_price < sma200:
@@ -1245,7 +1263,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         state_changed = True
         action = "🚨 SELL NOW — TRAILING STOP HIT"
         instruction_lines.append(f"Sell all remaining shares: {sell_shares:.4f}")
-        instruction_lines.append(f"After selling, manually buy {PARKING_TICKER} if you want the waiting-asset strategy.")
+        instruction_lines.append("After selling, wait in cash until the next TQQQ re-entry signal.")
     elif position_open and crossed_below_sma:
         sell_shares = shares
         cash += sell_shares * current_price
@@ -1267,7 +1285,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         state_changed = True
         action = "🚨 SELL NOW — CROSSED BELOW SMA200"
         instruction_lines.append(f"Sell all remaining shares: {sell_shares:.4f}")
-        instruction_lines.append(f"After selling, manually buy {PARKING_TICKER} only if you still want market exposure; cash is acceptable in weak markets.")
+        instruction_lines.append("After selling, wait in cash until the next TQQQ re-entry signal.")
     elif position_open and hit_profit_target:
         sell_shares = shares
         cash += sell_shares * current_price
@@ -1290,7 +1308,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         state_changed = True
         action = f"💰 SELL ALL — +{target_pct}% SWING TARGET HIT"
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
-        instruction_lines.append(f"Then manually buy {PARKING_TICKER} as the waiting asset.")
+        instruction_lines.append("Then wait in cash.")
         rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
         instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
     elif position_open and hit_early_warning_exit:
@@ -1316,7 +1334,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         state_changed = True
         action = "🔮 SELL ALL — EARLY DROP RISK HIGH"
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
-        instruction_lines.append(f"Then manually buy {PARKING_TICKER} only if you accept continued tech exposure during risk cooldown.")
+        instruction_lines.append("Then wait in cash until risk recovery.")
         instruction_lines.append(f"Risk signals: {', '.join(early_warning['active'])}")
         instruction_lines.append("Next re-buy trigger: price above SMA200 and SMA20 after risk cools.")
     elif position_open and hit_parabolic_exit:
@@ -1341,7 +1359,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         action = "⚡ SELL ALL — PARABOLIC PROFIT EXIT"
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
         instruction_lines.append(f"Reason: {', '.join(parabolic['active'])}.")
-        instruction_lines.append(f"Then manually buy {PARKING_TICKER} as the waiting asset.")
+        instruction_lines.append("Then wait in cash.")
         rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
         instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
     elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_manual_rebuy_signal or hit_early_reentry_signal):
@@ -1533,14 +1551,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         if not position_open:
             rsi_status = "ready" if reentry_rsi_ok else "too hot"
             lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({rsi_status})")
-            lines.append(f"🅿️ Waiting Asset: {PARKING_TICKER} @ ${current_parking_price:.2f} ({ticker.attrs.get('parking_price_source', 'daily')})")
             if parking_shares > 0:
+                lines.append(f"🅿️ Legacy Waiting Asset: {PARKING_TICKER} @ ${current_parking_price:.2f} ({ticker.attrs.get('parking_price_source', 'daily')})")
                 lines.append(f"   Holding: {parking_shares:.4f} shares / ${parking_position_value:.2f} ({parking_pnl_pct:+.2f}%)")
                 if parking_trailing_stop is not None:
                     parking_stop_gap = ((parking_trailing_stop - current_parking_price) / current_parking_price) * 100
                     lines.append(f"   XLK Trail Stop: ${parking_trailing_stop:.2f} ({parking_stop_gap:+.1f}% away)")
             elif cash > 0:
-                lines.append(f"   Plan: manually buy {PARKING_TICKER} with available cash if you want tech exposure while waiting.")
+                lines.append("🅿️ Waiting Asset: Cash")
+                lines.append("   Plan: stay in cash until the next TQQQ re-entry signal.")
             else:
                 lines.append("   Plan: no tracked cash or waiting asset.")
         lines.extend([
@@ -1577,7 +1596,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "─" * 30,
             "🧪 Bot-Only Benchmark",
             f"Mode:          {bot_strategy['status']}",
-            f"{PARKING_TICKER} Value:     ${bot_strategy['parking_value']:.2f}",
             f"📊 Total:        ${bot_strategy['total_value']:.2f}",
             f"Vs Real Path:   ${strategy_gap:+.2f} ({strategy_gap_pct:+.2f}%)",
             "─" * 30,
@@ -1618,12 +1636,14 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🔮 Early Re-buy: above SMA200 and SMA20, RSI <= {REENTRY_RSI_MAX}")
         if not position_open:
             lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max")
-            lines.append(f"🅿️ Waiting Asset: {PARKING_TICKER} @ ${current_parking_price:.2f}")
             if parking_shares > 0:
+                lines.append(f"🅿️ Legacy Waiting Asset: {PARKING_TICKER} @ ${current_parking_price:.2f}")
                 lines.append(f"🅿️ {PARKING_TICKER}: {parking_shares:.4f} shares / ${parking_position_value:.2f}")
                 lines.append(f"🅿️ {PARKING_TICKER} P&L: ${parking_pnl:+.2f} ({parking_pnl_pct:+.2f}%)")
                 if parking_trailing_stop is not None:
                     lines.append(f"🛑 {PARKING_TICKER} Stop: ${parking_trailing_stop:.2f}")
+            else:
+                lines.append("🅿️ Waiting Asset: Cash")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",
@@ -1760,6 +1780,9 @@ def mark_manual_bought():
 
 
 def mark_manual_parking_bought():
+    if not WAITING_ASSET_ENABLED:
+        raise RuntimeError("manual_parking_bought is disabled because the selected strategy now waits in cash.")
+
     manual_price = parse_manual_price("manual_parking_bought")
     state = load_state()
     if bool(state.get("position_open", False)):
@@ -1881,8 +1904,8 @@ if __name__ == "__main__":
     # - auto: scheduled run; decide from cron + NASDAQ calendar
     # - daily: manual full report
     # - check: manual signal-only check
-    # - manual_parking_bought: record manual XLK waiting-asset buy
-    # - manual_parking_sold: record manual XLK waiting-asset sell
+    # - manual_parking_bought: disabled while the selected strategy waits in cash
+    # - manual_parking_sold: record legacy manual XLK waiting-asset sell
     mode = sys.argv[1] if len(sys.argv) > 1 else "check"
 
     if mode == "auto":

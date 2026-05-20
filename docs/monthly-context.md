@@ -1,6 +1,8 @@
 # TQQQ Alert Bot - Monthly Context
 
-Last updated: 2026-05-15
+Last updated: 2026-05-20
+
+Latest decision, 2026-05-20: the live TQQQ bot was switched to the best-return no-XLK combined rule set from the saved historical grid. This overrides older notes in this file that mention a 14% stop, RSI <= 65, 5-day-only parabolic exit, or XLK as the selected waiting asset.
 
 ## English
 
@@ -16,15 +18,15 @@ The current strategy is a high-risk/high-reward TQQQ swing strategy with an opti
 
 1. Hold TQQQ while price is above the 200-day SMA.
 2. Sell all remaining shares if price crosses below the 200-day SMA.
-3. Sell all remaining shares if the true ratcheting 14% trailing stop is hit.
+3. Sell all remaining shares if the true ratcheting 25% trailing stop is hit.
 4. Sell all shares when price reaches +20% from the current entry price.
-5. Sell all shares on a profitable parabolic stretch: TQQQ 5-trading-day return >= 25%.
+5. Sell all shares on a profitable parabolic stretch: TQQQ 5-trading-day return >= 25% or 10-trading-day return >= 30%.
 6. After a +20% profit exit or parabolic profit exit, wait to re-buy after a 7.5% pullback from the profit-exit price.
 7. If the pullback does not happen within 20 trading days, re-buy anyway as long as price is still above SMA200.
 8. Sell all early if the optimized early-drop risk model reaches 3 active warning signs.
 9. After an early-warning exit, re-buy only when TQQQ is back above both SMA200 and SMA20.
 10. After a stop/SMA200 exit, do not use the pullback rule; wait for the next SMA200 cross-up.
-11. Every fresh buy or re-buy also requires TQQQ RSI14 to be at or below 65. This avoids chasing stretched rallies.
+11. Every fresh buy or re-buy also requires TQQQ RSI14 to be at or below 60. This avoids chasing stretched rallies.
 12. After every re-entry, the cycle starts again with a new entry price, new trailing stop, and new +20% target.
 
 There is no separate 5% hard stop anymore.
@@ -32,6 +34,7 @@ There is no separate 5% hard stop anymore.
 The daily Telegram report also includes a parabolic stretch section. If a normal TQQQ position is open and profitable, these conditions can trigger an automatic profit-style sell:
 
 - TQQQ 5-trading-day return at or above 25%.
+- TQQQ 10-trading-day return at or above 30%.
 
 The early-warning sell model checks five signals:
 
@@ -49,7 +52,7 @@ Manual safety mode is optional and does not run unless triggered manually from G
 - Or a full SMA200 reset: price goes below SMA200 first, then later crosses back above SMA200.
 - Or, after 20 trading days, a trend re-entry while TQQQ is still above SMA200.
 
-The RSI14 re-entry guard still applies in manual safety mode. Even if the manual pullback, SMA200 reset, or 20-day timeout is ready, the bot waits until RSI14 is 65 or lower before sending a re-buy instruction.
+The RSI14 re-entry guard still applies in manual safety mode. Even if the manual pullback, SMA200 reset, or 20-day timeout is ready, the bot waits until RSI14 is 60 or lower before sending a re-buy instruction.
 
 ### Waiting Asset While Out Of TQQQ
 
@@ -67,33 +70,32 @@ Corrected test window: 2010-11-24 through 2026-05-13.
 | QLD | 218.9x | 41.7% | -66.5% | Too leveraged for waiting mode |
 | USD | 308.2x | 44.9% | -79.0% | Too dangerous for waiting mode |
 
-Decision: use `XLK` as the preferred waiting asset when the bot is out of TQQQ but the human still wants large-cap tech exposure. The bot does not buy or sell XLK automatically for the real account. It only shows the suggested waiting asset and tracks it if manually recorded.
+Latest decision: use **cash** as the selected waiting asset for the core TQQQ bot. XLK is no longer a new waiting-asset recommendation because the full combined TQQQ grid favored the cash/no-park setup when optimizing the current rule family. If an old XLK waiting position is still tracked, the bot can still show it and tell the user to sell it, but `manual_parking_bought` is disabled for new XLK buys.
 
-Manual XLK tracking modes:
+Legacy XLK tracking mode:
 
-- `manual_parking_bought` with `manual_price=<actual XLK buy price>` and optional `manual_shares=<actual XLK shares>`.
 - `manual_parking_sold` with `manual_price=<actual XLK sell price>`.
 
 Flow:
 
 1. If the bot exits TQQQ, sell TQQQ manually.
-2. If you want the waiting-asset plan, buy XLK manually.
-3. Run `manual_parking_bought` so the bot tracks XLK value in the real path.
-4. When the bot later sends a TQQQ re-entry signal, sell XLK manually and buy TQQQ manually.
-5. Run `manual_parking_sold`, then `manual_bought` with the actual TQQQ buy price.
+2. Stay in cash while waiting.
+3. When the bot later sends a TQQQ re-entry signal, buy TQQQ manually.
+4. Run `manual_bought` with the actual TQQQ buy price.
 
-XLK sell rules:
+If an old XLK waiting position is still tracked, sell XLK and wait in cash when any of these happens:
 
-- Sell XLK and move back to TQQQ when the normal TQQQ re-entry signal triggers.
-- Sell XLK and wait in cash if TQQQ falls below SMA200.
-- Sell XLK and wait in cash if the early-drop risk model reaches 3 active warning signs.
-- Sell XLK and wait in cash if XLK hits its own 5% ratcheting trailing stop, calculated from the highest XLK high since the XLK waiting-asset entry.
+- The selected strategy changed to cash waiting mode.
+- The normal TQQQ re-entry signal triggers.
+- TQQQ falls below SMA200.
+- The early-drop risk model reaches 3 active warning signs.
+- XLK hits its own 5% ratcheting trailing stop, calculated from the highest XLK high since the XLK waiting-asset entry.
 
-The bot-only benchmark behaves differently: it automatically simulates moving into XLK after bot exits if TQQQ is still above SMA200 and early-drop risk is not high, moves from XLK back into TQQQ on bot re-entry, and moves from XLK to cash if TQQQ becomes defensive or the XLK 5% trailing stop is hit. This keeps the benchmark as "only follow bot rules, no manual decisions."
+The bot-only benchmark now follows the same selected TQQQ rule set and stays in cash while out of TQQQ. It no longer opens new XLK waiting positions.
 
 The TQQQ trailing stop is now:
 
-> Highest high since entry x 0.86
+> Highest high since entry x 0.75
 
 It only moves upward while the position is open. It resets after a full exit and starts again after the next re-entry.
 
@@ -131,7 +133,7 @@ On 2026-05-03, trailing stop variants were retested from 2010-11-24 through 2026
 | Exact low -8x ATR14 stop | 61.6x | 30.6% | -42.7% |
 | Highest high since entry -25% stop | 66.0x | 31.2% | -42.7% |
 
-On 2026-05-15, after adding XLK waiting-asset behavior and rechecking the combined strategy, the selected high-risk/high-reward version was updated to a 14% TQQQ ratchet, RSI14 <= 65 re-entry guard, and parabolic auto-exit on 5-day TQQQ return >= 25%.
+On 2026-05-15, after adding XLK waiting-asset behavior and rechecking the combined strategy, the then-selected high-risk/high-reward version was updated to a 14% TQQQ ratchet, RSI14 <= 65 re-entry guard, and parabolic auto-exit on 5-day TQQQ return >= 25%. This was superseded by the 2026-05-20 no-XLK grid decision.
 
 | TQQQ trailing stop | Final Multiple | CAGR | Max Drawdown |
 | --- | ---: | ---: | ---: |
@@ -141,7 +143,7 @@ On 2026-05-15, after adding XLK waiting-asset behavior and rechecking the combin
 | 16% true ratchet | 55.6x | 29.7% | -47.7% |
 | 10% true ratchet | 22.4x | 22.3% | -56.6% |
 
-Decision from the later combined grid: update the live TQQQ stop to 14% because it performed best together with RSI14 <= 65 and 5-day parabolic auto-exits. Very tight 5-10% TQQQ stops were still rejected because they caused too many noisy exits.
+Superseded decision from the 2026-05-15 grid: update the live TQQQ stop to 14% because it performed best together with RSI14 <= 65 and 5-day parabolic auto-exits. The current 2026-05-20 decision is 25% stop, RSI14 <= 60, 5d/10d parabolic, and cash while waiting.
 
 On 2026-05-06, an early-warning strategy search was run from 2010-11-24 through 2026-05-06 using TQQQ, QQQ, and VIX. The selected version was the best return version that also improved drawdown versus the local current-swing baseline:
 
@@ -164,7 +166,7 @@ Decision: add the RSI14 <= 65 re-entry guard. It gave up only a small amount of 
 
 Also on 2026-05-12, parabolic stretch exits were checked. The 5-day >= 25% and 10-day >= 30% rules improved the historical result in isolation, but each fired only once in more than 15 years. They were initially added as advisory-only warnings.
 
-On 2026-05-15, the full combined rules were tested together: TQQQ trailing stop, +20% profit target, parabolic exit, early-warning layer, XLK waiting asset, XLK stop, pullback/timeout re-entry, and RSI guard. The selected high-risk/high-reward setup is:
+On 2026-05-15, the full combined rules were tested together: TQQQ trailing stop, +20% profit target, parabolic exit, early-warning layer, XLK waiting asset, XLK stop, pullback/timeout re-entry, and RSI guard. That now-superseded setup was:
 
 - TQQQ trailing stop: 14%.
 - Re-entry RSI cap: RSI14 <= 65.
@@ -178,25 +180,46 @@ On 2026-05-15, the full combined rules were tested together: TQQQ trailing stop,
 
 Decision: switch to the high-return selected combined strategy. The extra return comes with higher historical drawdown and more trades, matching the high-risk/high-reward preference.
 
-Manual safety mode was also updated after testing strict manual re-entry, RSI-only re-entry, and hybrid timeout variants. The selected practical rule is: keep the strict manual pullback/reset first, but after 20 trading days allow re-entry above SMA200 if RSI14 <= 65. This avoids immediately chasing after a manual sell while reducing the risk of being stuck in cash for months.
+On 2026-05-20, the saved full combined grid was rechecked against the actual repo constants. The best-return no-XLK rule set was selected:
+
+- TQQQ trailing stop: 25%.
+- Profit target: +20% sell all.
+- Re-buy pullback: -7.5% from the exit price.
+- Re-buy timeout: 20 trading days.
+- Manual safety timeout: 20 trading days.
+- Re-entry RSI cap: RSI14 <= 60.
+- Parabolic exit: 5-day TQQQ return >= 25% or 10-day TQQQ return >= 30%.
+- Waiting asset: cash.
+- Early-warning exit: keep the current 3-of-5 model.
+
+Saved historical result from 2010-11-24 through 2026-05-13:
+
+| Strategy | Final Multiple | CAGR | Max Drawdown | Trades |
+| --- | ---: | ---: | ---: | ---: |
+| 25% stop, RSI60, 5d/10d parabolic, cash | 93.8x | 34.1% | -46.8% | 194 |
+
+Decision: switch the live bot to this best-return no-XLK rule set. Older XLK tracking remains only as legacy support until any existing tracked XLK position is sold.
+
+Manual safety mode was also updated after testing strict manual re-entry, RSI-only re-entry, and hybrid timeout variants. The selected practical rule is: keep the strict manual pullback/reset first, but after 20 trading days allow re-entry above SMA200 if RSI14 <= 60. This avoids immediately chasing after a manual sell while reducing the risk of being stuck in cash for months.
 
 ### Current Position State
 
 The live state is stored in `position_state.json`.
 
-Current live state as of 2026-05-12 after the manual sell while in cash:
+Current live state as of 2026-05-20:
 
 ```json
 {
   "avg_cost": null,
-  "cash": 2726.11,
+  "cash": 26.13,
   "early_exit_date": null,
   "early_exit_price": null,
   "entry_date": null,
   "highest_high_since_entry": null,
-  "last_action": "manual_sold",
-  "parking_avg_cost": null,
-  "parking_shares": 0.0,
+  "last_action": "manual_xlk_bought",
+  "parking_avg_cost": 178.62,
+  "parking_highest_high_since_entry": 178.7,
+  "parking_shares": 15.1158,
   "parking_ticker": "XLK",
   "manual_exit_date": "2026-05-05",
   "manual_exit_mode": true,
@@ -215,11 +238,13 @@ Current live state as of 2026-05-12 after the manual sell while in cash:
 Meaning:
 
 - The bot assumes there is no open TQQQ position.
-- The previous real position was manually sold at `$67.37`.
-- Tracked cash is `$2726.11`.
+- The previous real TQQQ position was manually sold at `$67.37`.
+- An old XLK waiting position is still tracked: `15.1158` shares at `$178.62` average cost.
+- Tracked cash is `$26.13`.
 - Manual safety mode is active.
-- The bot waits for the manual pullback target or SMA200 reset.
-- Re-buy also requires RSI14 <= 65.
+- The bot waits for the manual pullback target, SMA200 reset, or 20-trading-day timeout.
+- Re-buy also requires RSI14 <= 60.
+- Because the selected strategy now waits in cash, the next normal instruction for the tracked XLK position is to sell XLK and remain in cash unless a TQQQ re-entry signal arrives first.
 
 If real trades are made manually, `position_state.json` must match reality.
 
@@ -235,9 +260,9 @@ This benchmark started from the same original position:
 - Shares: `40.4647`
 - Average cost: `$61.54`
 
-Unlike `position_state.json`, this file ignores manual/panic sells. It only follows the deterministic bot rules: +20% profit exit, 14% trailing stop, SMA200 exit, and the strategy's own re-entry rules.
+Unlike `position_state.json`, this file ignores manual/panic sells. It only follows the deterministic bot rules: +20% profit exit, 25% trailing stop, SMA200 exit, parabolic exit, early-warning exit, and the strategy's own re-entry rules.
 
-As of 2026-05-14, the benchmark also simulates the selected waiting-asset behavior: after bot exits TQQQ, it parks the benchmark value in XLK until the next bot re-entry signal. This is paper-only and does not imply the real account bought XLK.
+As of 2026-05-20, the benchmark uses cash while out of TQQQ. It no longer opens new XLK waiting positions.
 
 Daily reports include a `Bot-Only Benchmark` section with the benchmark total and the difference versus the real path. At month-end, compare:
 
@@ -280,13 +305,9 @@ Manual safety mode is triggered only through GitHub Actions `workflow_dispatch`:
 
 This is not used by the Cloudflare scheduler.
 
-Manual XLK waiting-asset tracking is also triggered only through GitHub Actions `workflow_dispatch`:
+Legacy manual XLK waiting-asset tracking is also triggered only through GitHub Actions `workflow_dispatch`.
 
-- `mode=manual_parking_bought`
-- `manual_price=<actual XLK buy price>`
-- optional `manual_shares=<actual XLK shares>`
-
-And when XLK is sold:
+New XLK buys are disabled under the selected cash-waiting strategy. Use this only to record the sale of an old tracked XLK position:
 
 - `mode=manual_parking_sold`
 - `manual_price=<actual XLK sell price>`
@@ -311,7 +332,7 @@ Daily reports:
 
 - Send a full Telegram status message.
 - Include current price, SMA200, trailing stop, position mode, cash, shares, total value, P&L, next profit target, and pullback re-entry target if waiting after a profit exit.
-- If there is no open TQQQ position, include XLK waiting-asset guidance and any tracked XLK shares/value.
+- If there is no open TQQQ position, show cash as the selected waiting asset. If an old XLK position is still tracked, include its legacy shares/value and sell instruction.
 - Include the price source. During market hours, the bot first overlays Yahoo's latest 1-minute bar on top of the daily history so it does not rely on yesterday's close. If Yahoo/yfinance is rate-limited or returns empty data, the bot retries and then falls back to Stooq daily/quote data. If both providers fail or only stale daily data is available during market hours, the run fails and sends a workflow-failure alert instead of trading blindly.
 - Include an advisory risk context section inspired by the TradingAgents idea: trend, RSI momentum, ATR volatility, a 4x ATR reference stop, and risk level.
 - This risk context is not a trading trigger. Buy/sell/profit-taking instructions still come only from the deterministic strategy rules.
@@ -371,6 +392,8 @@ Possible future improvements, only if needed:
 
 ## עברית
 
+החלטה אחרונה, 2026-05-20: הבוט החי עבר לסט הכללים עם התשואה ההיסטורית הטובה ביותר ללא XLK: טריילינג סטופ 25%, כניסה מחדש רק כש-RSI14 <= 60, יציאת parabolic לפי 5 ימים >= 25% או 10 ימים >= 30%, ונכס המתנה במזומן. זה מחליף הערות ישנות בקובץ שמזכירות סטופ 14%, RSI <= 65, יציאת parabolic רק לפי 5 ימים, או XLK כנכס המתנה נבחר.
+
 ### מה הריפו הזה עושה
 
 הריפו הזה מפעיל בוט התראות אוטומטי ל-TQQQ. הוא בודק את TQQQ בזמן שעות המסחר של נאסד"ק, שולח התראות לטלגרם כשצריך פעולה, ושומר קובץ מצב קטן כדי שהאסטרטגיה תוכל להמשיך לאורך זמן בלי שינוי ידני בקוד.
@@ -383,15 +406,15 @@ Possible future improvements, only if needed:
 
 1. להחזיק TQQQ כל עוד המחיר מעל SMA200.
 2. למכור את כל שאר המניות אם המחיר חוצה למטה את SMA200.
-3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 14% מופעל.
+3. למכור את כל שאר המניות אם הטריילינג סטופ האמיתי של 25% מופעל.
 4. למכור את כל המניות כשהמחיר מגיע ל-+20% ממחיר הכניסה הנוכחי.
-5. למכור את כל המניות בזינוק parabolic רווחי: תשואת TQQQ ב-5 ימי מסחר >= 25%.
+5. למכור את כל המניות בזינוק parabolic רווחי: תשואת TQQQ ב-5 ימי מסחר >= 25% או תשואת 10 ימי מסחר >= 30%.
 6. אחרי יציאת רווח של +20% או יציאת parabolic, לחכות לכניסה מחדש אחרי ירידה של 7.5% ממחיר המכירה.
 7. אם הירידה לא מגיעה תוך 20 ימי מסחר, להיכנס מחדש בכל זאת כל עוד המחיר עדיין מעל SMA200.
 8. למכור הכל מוקדם אם מודל הסיכון המוקדם מגיע ל-3 סימני אזהרה פעילים.
 9. אחרי יציאת early-warning, להיכנס מחדש רק כש-TQQQ חוזרת מעל SMA200 וגם מעל SMA20.
 10. אחרי יציאה בגלל סטופ או SMA200, לא משתמשים בכלל ה-pullback; מחכים לחצייה חדשה מעל SMA200.
-11. כל קנייה חדשה או כניסה מחדש דורשת גם RSI14 של TQQQ שווה או נמוך מ-65. זה נועד למנוע כניסה אחרי ראלי מתוח מדי.
+11. כל קנייה חדשה או כניסה מחדש דורשת גם RSI14 של TQQQ שווה או נמוך מ-60. זה נועד למנוע כניסה אחרי ראלי מתוח מדי.
 12. אחרי כל כניסה מחדש, המחזור מתחיל מחדש עם מחיר כניסה חדש, טריילינג סטופ חדש, ויעד רווח חדש של +20%.
 
 אין יותר סטופ קשיח נפרד של 5%.
@@ -399,6 +422,7 @@ Possible future improvements, only if needed:
 בדוח היומי לטלגרם יש גם אזור parabolic stretch. אם יש פוזיציית TQQQ רגילה פתוחה והטרייד ברווח, התנאים האלה יכולים לגרום למכירת רווח אוטומטית:
 
 - תשואת TQQQ ב-5 ימי מסחר שווה או מעל 25%.
+- תשואת TQQQ ב-10 ימי מסחר שווה או מעל 30%.
 
 מודל המכירה המוקדמת בודק חמישה סימנים:
 
@@ -416,7 +440,7 @@ Possible future improvements, only if needed:
 - או איפוס SMA200 מלא: המחיר יורד קודם מתחת ל-SMA200, ואז בהמשך חוצה בחזרה מעל SMA200.
 - או, אחרי 20 ימי מסחר, כניסה מחדש לפי מגמה כל עוד TQQQ עדיין מעל SMA200.
 
-גם במצב בטיחות ידני כלל ה-RSI14 עדיין חל. גם אם יעד ה-pullback הידני, איפוס SMA200, או timeout של 20 ימי מסחר מוכנים, הבוט יחכה עד ש-RSI14 יהיה 65 או נמוך יותר לפני שליחת הוראת קנייה מחדש.
+גם במצב בטיחות ידני כלל ה-RSI14 עדיין חל. גם אם יעד ה-pullback הידני, איפוס SMA200, או timeout של 20 ימי מסחר מוכנים, הבוט יחכה עד ש-RSI14 יהיה 60 או נמוך יותר לפני שליחת הוראת קנייה מחדש.
 
 ### נכס המתנה מחוץ ל-TQQQ
 
@@ -434,33 +458,32 @@ Possible future improvements, only if needed:
 | QLD | 218.9x | 41.7% | -66.5% | ממונף מדי למצב המתנה |
 | USD | 308.2x | 44.9% | -79.0% | מסוכן מדי למצב המתנה |
 
-החלטה: להשתמש ב-`XLK` כנכס ההמתנה המועדף כשהבוט מחוץ ל-TQQQ אבל רוצים עדיין חשיפה לטכנולוגיה גדולה. הבוט לא קונה או מוכר XLK אוטומטית בחשבון האמיתי. הוא רק מציג את ההמלצה ועוקב אחרי XLK אם הפעולה נרשמה ידנית.
+החלטה עדכנית: להשתמש במזומן כנכס ההמתנה של בוט TQQQ. XLK כבר לא מומלץ לקניות המתנה חדשות, כי הגריד המשולב המלא העדיף cash/no-park עבור סט הכללים הנוכחי. אם עדיין יש פוזיציית XLK ישנה במעקב, הבוט יכול להציג אותה ולבקש למכור אותה, אבל `manual_parking_bought` חסום לקניות XLK חדשות.
 
-מצבי מעקב ידניים ל-XLK:
+מצב מעקב ישן ל-XLK:
 
-- `manual_parking_bought` עם `manual_price=<actual XLK buy price>` ואופציונלית `manual_shares=<actual XLK shares>`.
 - `manual_parking_sold` עם `manual_price=<actual XLK sell price>`.
 
 הזרימה:
 
 1. אם הבוט יוצא מ-TQQQ, מוכרים TQQQ ידנית.
-2. אם רוצים את תוכנית נכס ההמתנה, קונים XLK ידנית.
-3. מריצים `manual_parking_bought` כדי שהבוט יעקוב אחרי ערך XLK במסלול האמיתי.
-4. כשהבוט שולח בהמשך איתות כניסה ל-TQQQ, מוכרים XLK ידנית וקונים TQQQ ידנית.
-5. מריצים `manual_parking_sold`, ואז `manual_bought` עם מחיר הקנייה האמיתי של TQQQ.
+2. נשארים במזומן בזמן ההמתנה.
+3. כשהבוט שולח בהמשך איתות כניסה ל-TQQQ, קונים TQQQ ידנית.
+4. מריצים `manual_bought` עם מחיר הקנייה האמיתי של TQQQ.
 
-כללי מכירה ל-XLK:
+אם עדיין יש פוזיציית XLK ישנה במעקב, מוכרים XLK ונשארים במזומן כאשר אחד מאלה קורה:
 
-- למכור XLK ולעבור בחזרה ל-TQQQ כשמופיע איתות כניסה רגיל ל-TQQQ.
+- האסטרטגיה שנבחרה השתנתה למצב המתנה במזומן.
+- מופיע איתות כניסה רגיל ל-TQQQ.
 - למכור XLK ולהמתין במזומן אם TQQQ יורדת מתחת ל-SMA200.
 - למכור XLK ולהמתין במזומן אם מודל ה-early-drop risk מגיע ל-3 סימני אזהרה פעילים.
 - למכור XLK ולהמתין במזומן אם XLK מפעילה טריילינג סטופ עצמאי של 5%, שמחושב מהשיא הגבוה ביותר של XLK מאז הכניסה לנכס ההמתנה.
 
-הבנצ'מרק של Bot-Only מתנהג אחרת: הוא מדמה אוטומטית מעבר ל-XLK אחרי יציאת בוט אם TQQQ עדיין מעל SMA200 וסיכון early-drop לא גבוה, חזרה מ-XLK ל-TQQQ באיתות הכניסה הבא, ומעבר מ-XLK למזומן אם TQQQ נהיית דפנסיבית או אם סטופ XLK של 5% מופעל. זה על הנייר בלבד ולא אומר שהחשבון האמיתי קנה XLK.
+הבנצ'מרק של Bot-Only נשאר עכשיו במזומן כשהוא מחוץ ל-TQQQ. הוא כבר לא פותח פוזיציות XLK חדשות.
 
 הטריילינג סטופ של TQQQ עכשיו הוא:
 
-> המחיר הגבוה ביותר מאז הכניסה x 0.86
+> המחיר הגבוה ביותר מאז הכניסה x 0.75
 
 הסטופ רק עולה בזמן שהפוזיציה פתוחה. אחרי מכירה מלאה הוא מתאפס, ומתחיל מחדש אחרי הכניסה הבאה.
 
@@ -498,7 +521,7 @@ Possible future improvements, only if needed:
 | סטופ ATR: low -8x ATR14 | 61.6x | 30.6% | -42.7% |
 | שיא מאז הכניסה פחות 25% | 66.0x | 31.2% | -42.7% |
 
-ב-2026-05-15, אחרי הוספת התנהגות XLK ובדיקה מחדש של כל האסטרטגיה ביחד, הגרסה שנבחרה ל-high-risk/high-reward עודכנה לטריילינג סטופ TQQQ של 14%, כלל כניסה RSI14 <= 65, ויציאת parabolic אוטומטית לפי תשואת 5 ימים >= 25%.
+ב-2026-05-15, אחרי הוספת התנהגות XLK ובדיקה מחדש של כל האסטרטגיה ביחד, הגרסה שנבחרה אז ל-high-risk/high-reward עודכנה לטריילינג סטופ TQQQ של 14%, כלל כניסה RSI14 <= 65, ויציאת parabolic אוטומטית לפי תשואת 5 ימים >= 25%. ההחלטה הזו הוחלפה ב-2026-05-20 על ידי גריד no-XLK.
 
 | טריילינג סטופ TQQQ | מכפיל סופי | CAGR | Max drawdown |
 | --- | ---: | ---: | ---: |
@@ -508,7 +531,7 @@ Possible future improvements, only if needed:
 | טריילינג אמיתי 14% | 55.6x | 29.7% | -47.7% |
 | טריילינג אמיתי 10% | 22.4x | 22.3% | -56.6% |
 
-החלטת הגריד המשולב המאוחר יותר: לעדכן את הסטופ החי של TQQQ ל-14%, כי הוא עבד הכי טוב יחד עם RSI14 <= 65 ויציאת parabolic לפי 5 ימים. סטופים צמודים מאוד של 5-10% עדיין נדחו כי הם גרמו ליותר מדי יציאות מרעש רגיל.
+החלטת הגריד של 2026-05-15 הוחלפה: אז נבחר סטופ 14%, אבל ההחלטה הנוכחית מ-2026-05-20 היא סטופ 25%, כניסה RSI14 <= 60, יציאת parabolic לפי 5 ימים או 10 ימים, והמתנה במזומן.
 
 ב-2026-05-06 הורץ חיפוש אסטרטגיות early-warning מ-2010-11-24 עד 2026-05-06 על TQQQ, QQQ ו-VIX. הגרסה שנבחרה הייתה גרסת התשואה הטובה ביותר שגם שיפרה את הירידה המקסימלית לעומת בסיס הסווינג המקומי:
 
@@ -531,7 +554,7 @@ Possible future improvements, only if needed:
 
 גם ב-2026-05-12 נבדקו יציאות בגלל parabolic stretch. כללי 5 ימים >= 25% ו-10 ימים >= 30% שיפרו את התוצאה ההיסטורית בנפרד, אבל כל אחד הופעל רק פעם אחת ביותר מ-15 שנה. בהתחלה הם נוספו לדוח כאזהרות מידע בלבד.
 
-ב-2026-05-15 בדקנו את כל הכללים ביחד: טריילינג סטופ TQQQ, יעד רווח +20%, יציאת parabolic, שכבת early-warning, נכס המתנה XLK, סטופ XLK, כניסה לפי pullback/timeout, וכלל RSI. הסטאפ שנבחר ל-high-risk/high-reward הוא:
+ב-2026-05-15 בדקנו את כל הכללים ביחד: טריילינג סטופ TQQQ, יעד רווח +20%, יציאת parabolic, שכבת early-warning, נכס המתנה XLK, סטופ XLK, כניסה לפי pullback/timeout, וכלל RSI. הסטאפ הבא היה הבחירה אז, אבל הוא הוחלף ב-2026-05-20:
 
 - טריילינג סטופ TQQQ: 14%.
 - כניסה מחדש: RSI14 <= 65.
@@ -545,7 +568,7 @@ Possible future improvements, only if needed:
 
 החלטה: לעבור לגרסה המשולבת עם התשואה הגבוהה יותר. התשואה הנוספת מגיעה עם drawdown היסטורי גבוה יותר ויותר עסקאות, וזה תואם את העדפת high-risk/high-reward.
 
-מצב בטיחות ידני עודכן גם אחרי בדיקה של כניסה ידנית קשיחה, כניסה לפי RSI בלבד, וגרסאות timeout היברידיות. הכלל הפרקטי שנבחר: קודם לשמור על pullback/reset ידני קשיח, אבל אחרי 20 ימי מסחר לאפשר כניסה מחדש מעל SMA200 אם RSI14 <= 65. זה מונע קנייה מיידית אחרי מכירה ידנית, אבל מקטין את הסיכון להיתקע במזומן חודשים.
+מצב בטיחות ידני עודכן גם אחרי בדיקה של כניסה ידנית קשיחה, כניסה לפי RSI בלבד, וגרסאות timeout היברידיות. הכלל הפרקטי שנבחר: קודם לשמור על pullback/reset ידני קשיח, אבל אחרי 20 ימי מסחר לאפשר כניסה מחדש מעל SMA200 אם RSI14 <= 60. זה מונע קנייה מיידית אחרי מכירה ידנית, אבל מקטין את הסיכון להיתקע במזומן חודשים.
 
 ### מצב הפוזיציה הנוכחי
 
@@ -583,7 +606,7 @@ Possible future improvements, only if needed:
 - המזומן במעקב הוא `$2726.11`.
 - מצב בטיחות ידני פעיל.
 - הבוט מחכה ליעד ה-pullback הידני או לאיפוס SMA200.
-- קנייה מחדש דורשת גם RSI14 <= 65.
+- קנייה מחדש דורשת גם RSI14 <= 60.
 
 אם מבוצעות פעולות אמיתיות בתיק, חשוב ש-`position_state.json` יתאים למציאות.
 
@@ -599,7 +622,7 @@ Possible future improvements, only if needed:
 - מניות: `40.4647`
 - מחיר ממוצע: `$61.54`
 
-בניגוד ל-`position_state.json`, הקובץ הזה מתעלם ממכירות ידניות/פאניקה. הוא עוקב רק אחרי חוקי הבוט הדטרמיניסטיים: יציאת רווח ב-+20%, טריילינג סטופ של 14%, יציאת SMA200, וכללי הכניסה מחדש של האסטרטגיה.
+בניגוד ל-`position_state.json`, הקובץ הזה מתעלם ממכירות ידניות/פאניקה. הוא עוקב רק אחרי חוקי הבוט הדטרמיניסטיים: יציאת רווח ב-+20%, טריילינג סטופ של 25%, יציאת SMA200, יציאת parabolic, יציאת early-warning, וכללי הכניסה מחדש של האסטרטגיה.
 
 בדוחות היומיים מופיע אזור `Bot-Only Benchmark` עם הערך של הבנצ'מרק וההפרש מול המסלול האמיתי. בסוף החודש נשווה:
 

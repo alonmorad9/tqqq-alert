@@ -89,6 +89,14 @@ Waiting asset:
 - `manual_parking_bought` is disabled while the selected strategy is cash waiting mode.
 - Bot-only benchmark behavior: stays in cash while out of TQQQ and no longer opens new XLK waiting positions.
 
+Combined real-stock swing mode:
+
+- Operational decision, 2026-05-20: use `real-stock-alert` as the temporary swing-stock engine while TQQQ is out/waiting.
+- TQQQ remains the master controller.
+- After moving cash to `real-stock-alert`, run `manual_swing_started` here with the same cash amount so this repo does not double-count that cash.
+- If TQQQ gives a buy/re-buy signal, sell all real-stock positions first, confirm those sales in `real-stock-alert`, then buy TQQQ and confirm with `manual_bought` here.
+- This repo does not track individual swing-stock positions. `real-stock-alert/position_state.json` is the source of truth for those positions.
+
 Current tracked real position state:
 
 ```json

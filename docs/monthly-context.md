@@ -93,6 +93,25 @@ If an old XLK waiting position is still tracked, sell XLK and wait in cash when 
 
 The bot-only benchmark now follows the same selected TQQQ rule set and stays in cash while out of TQQQ. It no longer opens new XLK waiting positions.
 
+### Combined Real-Stock Swing Mode
+
+Latest operational decision, 2026-05-20: use `real-stock-alert` as the temporary swing-stock engine while the TQQQ strategy is out.
+
+Master rule:
+
+> TQQQ has priority. If this repo sends a TQQQ buy/re-buy signal, sell all real-stock swing positions first, then buy TQQQ.
+
+Flow:
+
+1. If TQQQ exits, record the TQQQ exit here.
+2. Move the freed cash into `real-stock-alert` with `set_cash`.
+3. Run `manual_swing_started` here with the same cash amount so this repo stops counting that cash as idle TQQQ cash.
+4. Follow `real-stock-alert` buy/sell instructions while this repo says TQQQ is waiting/out.
+5. If this repo later sends a TQQQ re-entry signal, sell all real-stock positions and confirm those sales in `real-stock-alert`.
+6. Buy TQQQ and record the buy here with `manual_bought`.
+
+This repo does not track individual swing-stock positions. `real-stock-alert/position_state.json` is the source of truth for those positions.
+
 The TQQQ trailing stop is now:
 
 > Highest high since entry x 0.75

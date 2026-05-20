@@ -582,6 +582,14 @@ def clear_parking_fields():
     }
 
 
+def clear_external_swing_fields():
+    return {
+        "external_swing_active": False,
+        "external_swing_amount": 0.0,
+        "external_swing_started_at": None,
+    }
+
+
 def park_cash_in_benchmark(state, ticker, cash):
     if not WAITING_ASSET_ENABLED:
         state.update(clear_parking_fields())
@@ -670,6 +678,7 @@ def clear_manual_exit_fields():
         "manual_exit_price": None,
         "manual_exit_date": None,
         "manual_exit_saw_below_sma": False,
+        **clear_external_swing_fields(),
     }
 
 
@@ -1129,6 +1138,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     manual_exit_date = state.get("manual_exit_date")
     manual_wait_days = trading_days_since(manual_exit_date, ticker) if manual_exit_mode else 0
     manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
+    external_swing_active = bool(state.get("external_swing_active", False))
+    external_swing_amount = float(state.get("external_swing_amount", 0.0))
     state_changed = False
     state_dirty = False
     highest_high_since_entry = initialize_highest_high_since_entry(state, ticker)
@@ -1559,7 +1570,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                     lines.append(f"   XLK Trail Stop: ${parking_trailing_stop:.2f} ({parking_stop_gap:+.1f}% away)")
             elif cash > 0:
                 lines.append("🅿️ Waiting Asset: Cash")
-                lines.append("   Plan: stay in cash until the next TQQQ re-entry signal.")
+                lines.append("   Plan: use real-stock-alert for temporary swing mode, or stay in cash.")
+                lines.append("   TQQQ has priority: sell swing stocks if this bot sends a re-entry signal.")
+            elif external_swing_active:
+                lines.append(f"🧩 External Swing: active in real-stock-alert (~${external_swing_amount:.2f} started)")
+                lines.append("   TQQQ has priority: sell swing stocks if this bot sends a re-entry signal.")
             else:
                 lines.append("   Plan: no tracked cash or waiting asset.")
         lines.extend([
@@ -1644,6 +1659,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                     lines.append(f"🛑 {PARKING_TICKER} Stop: ${parking_trailing_stop:.2f}")
             else:
                 lines.append("🅿️ Waiting Asset: Cash")
+                lines.append("   TQQQ has priority over real-stock swing mode.")
+        if external_swing_active:
+            lines.append(f"🧩 External Swing: active (~${external_swing_amount:.2f} started)")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",
@@ -1680,6 +1698,18 @@ def parse_manual_price(mode="manual_sold"):
     return price
 
 
+def parse_manual_amount(mode="manual_swing_started"):
+    raw_amount = os.getenv("MANUAL_AMOUNT", "").strip()
+    if not raw_amount:
+        raise RuntimeError(f"{mode} mode requires MANUAL_AMOUNT / manual_amount input")
+
+    amount = float(raw_amount)
+    if amount <= 0:
+        raise RuntimeError("manual_amount must be greater than 0")
+
+    return amount
+
+
 def mark_manual_sold():
     manual_price = parse_manual_price()
     state = load_state()
@@ -1703,6 +1733,7 @@ def mark_manual_sold():
         "manual_exit_price": round(manual_price, 4),
         "manual_exit_date": datetime.now(UTC).date().isoformat(),
         "manual_exit_saw_below_sma": False,
+        **clear_external_swing_fields(),
         "last_action": "manual_sold",
     })
     save_state(state)
@@ -1728,14 +1759,17 @@ def mark_manual_bought():
     cash = float(state.get("cash", 0.0))
 
     raw_shares = os.getenv("MANUAL_SHARES", "").strip()
+    external_swing_active = bool(state.get("external_swing_active", False))
     if raw_shares:
         shares = float(raw_shares)
         if shares <= 0:
             raise RuntimeError("manual_shares must be greater than 0")
         spent = shares * manual_price
         remaining_cash = round(cash - spent, 2)
-        if remaining_cash < -0.01:
+        if remaining_cash < -0.01 and not external_swing_active:
             raise RuntimeError(f"manual_shares implies spending ${spent:.2f} but only ${cash:.2f} tracked cash available")
+        if external_swing_active and remaining_cash < 0:
+            remaining_cash = 0.0
     else:
         shares = cash / manual_price if cash > 0 else 0.0
         remaining_cash = 0.0
@@ -1760,6 +1794,7 @@ def mark_manual_bought():
         "manual_exit_price": None,
         "manual_exit_date": None,
         "manual_exit_saw_below_sma": False,
+        **clear_external_swing_fields(),
         "last_action": "manual_bought",
     })
     save_state(state)
@@ -1858,6 +1893,35 @@ def mark_manual_parking_sold():
     print(f"[MANUAL {PARKING_TICKER} SOLD] Price: {manual_price:.2f} | Cash: {cash:.2f}")
 
 
+def mark_manual_swing_started():
+    amount = parse_manual_amount()
+    state = load_state()
+    cash = float(state.get("cash", 0.0))
+    if amount > cash + 0.01:
+        raise RuntimeError(f"manual_amount ${amount:.2f} is greater than tracked cash ${cash:.2f}")
+    remaining_cash = round(cash - amount, 2)
+    state.update({
+        "cash": remaining_cash,
+        "external_swing_active": True,
+        "external_swing_amount": round(amount, 2),
+        "external_swing_started_at": datetime.now(UTC).date().isoformat(),
+        "last_action": "manual_swing_started",
+    })
+    save_state(state)
+
+    lines = [
+        "🧩 External Swing Mode Started",
+        "─" * 30,
+        f"Moved to real-stock-alert: ${amount:.2f}",
+        f"Remaining tracked TQQQ cash: ${remaining_cash:.2f}",
+        "─" * 30,
+        "Follow real-stock-alert while TQQQ is waiting.",
+        "If this bot sends a TQQQ re-entry signal, sell real-stock positions first, then buy TQQQ and run manual_bought here.",
+    ]
+    send_telegram("\n".join(lines))
+    print(f"[MANUAL SWING STARTED] Amount: {amount:.2f} | Remaining cash: {remaining_cash:.2f}")
+
+
 def run_auto_mode():
     schedule = os.getenv("GITHUB_EVENT_SCHEDULE")
     intended_utc = intended_schedule_time(schedule)
@@ -1906,6 +1970,7 @@ if __name__ == "__main__":
     # - check: manual signal-only check
     # - manual_parking_bought: disabled while the selected strategy waits in cash
     # - manual_parking_sold: record legacy manual XLK waiting-asset sell
+    # - manual_swing_started: move tracked cash to real-stock-alert external swing mode
     mode = sys.argv[1] if len(sys.argv) > 1 else "check"
 
     if mode == "auto":
@@ -1920,5 +1985,7 @@ if __name__ == "__main__":
         mark_manual_parking_bought()
     elif mode == "manual_parking_sold":
         mark_manual_parking_sold()
+    elif mode == "manual_swing_started":
+        mark_manual_swing_started()
     else:
         check_strategy(daily_report=False)

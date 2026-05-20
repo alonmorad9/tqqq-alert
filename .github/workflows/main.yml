@@ -19,8 +19,13 @@ on:
           - manual_bought
           - manual_parking_bought
           - manual_parking_sold
+          - manual_swing_started
       manual_price:
         description: 'Price per share (required for manual_sold, manual_bought, manual_parking_bought, manual_parking_sold)'
+        required: false
+        default: ''
+      manual_amount:
+        description: 'Cash amount moved to real-stock swing mode (required for manual_swing_started)'
         required: false
         default: ''
       manual_shares:
@@ -56,6 +61,7 @@ jobs:
           GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule || inputs.schedule }}
           RUN_MODE: ${{ inputs.mode || 'auto' }}
           MANUAL_PRICE: ${{ inputs.manual_price }}
+          MANUAL_AMOUNT: ${{ inputs.manual_amount }}
           MANUAL_SHARES: ${{ inputs.manual_shares }}
         run: python script.py "${RUN_MODE:-auto}"
       - name: Save position state

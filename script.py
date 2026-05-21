@@ -17,7 +17,7 @@ TICKER = "TQQQ"
 STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
-TRAILING_STOP_PCT = 0.16
+TRAILING_STOP_PCT = 0.25
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.05
 SWING_REBUY_TIMEOUT_DAYS = 15
@@ -25,9 +25,10 @@ MANUAL_REBUY_TIMEOUT_DAYS = 3
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
-REENTRY_RSI_MAX = 80
+AUTO_EARLY_WARNING_EXIT = False
+REENTRY_RSI_MAX = 70
 PARABOLIC_RET5_WARNING_PCT = 0.25
-PARABOLIC_RET10_WARNING_PCT = 0.30
+PARABOLIC_RET10_WARNING_PCT = None
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -714,7 +715,7 @@ def build_early_warning_lines(early_warning):
     active = ", ".join(early_warning["active"]) if early_warning["active"] else "none"
     return [
         "🔮 Early Drop Risk",
-        "What it means: can trigger an early sell only while a normal TQQQ position is open.",
+        "What it means: advisory only; this does not sell by itself.",
         f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active)",
         f"Active:        {active}",
         f"VIX:           {early_warning['vix']:.2f} ({early_warning['vix_ret5']:+.1%} over 5d)",
@@ -796,7 +797,7 @@ def update_bot_strategy_benchmark(ticker):
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
-    hit_early_warning_exit = position_open and early_warning["hit"]
+    hit_early_warning_exit = position_open and AUTO_EARLY_WARNING_EXIT and early_warning["hit"]
     hit_profit_target = (
         position_open
         and shares > 0
@@ -1022,7 +1023,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
-    hit_early_warning_exit = position_open and early_warning["hit"]
+    hit_early_warning_exit = position_open and AUTO_EARLY_WARNING_EXIT and early_warning["hit"]
     hit_profit_target = (
         position_open
         and shares > 0

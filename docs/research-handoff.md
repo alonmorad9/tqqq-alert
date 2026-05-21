@@ -10,15 +10,15 @@ Current live rules:
 
 | Rule | Value |
 |---|---:|
-| TQQQ trailing stop | 16% |
+| TQQQ trailing stop | 25% |
 | Profit target | +20%, sell all |
 | Re-buy pullback | -5% from exit price |
 | Re-buy timeout | 15 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI cap | RSI14 <= 80 |
-| Parabolic exit | 5d >= 25% OR 10d >= 30% |
+| Re-entry RSI cap | RSI14 <= 70 |
+| Parabolic exit | 5d >= 25% |
 | Waiting state | Cash |
-| Early-warning exit | 3-of-5 warnings |
+| Early-warning risk | Advisory only, no automatic sell |
 
 ## Historical Research Summary
 
@@ -26,13 +26,14 @@ The selected rule set came from the combined TQQQ strategy searches saved under 
 
 The best clean live rule family was:
 
-- 16% trailing stop.
+- 25% trailing stop.
 - +20% profit target.
 - -5% pullback re-entry.
 - 15 trading-day timeout after normal profit exits.
 - 3 trading-day timeout after manual safety sells.
-- RSI14 <= 80 re-entry guard.
-- Parabolic profit exit using either 5-day or 10-day stretch.
+- RSI14 <= 70 re-entry guard.
+- Parabolic profit exit using the 5-day stretch.
+- Early-warning signals remain in Telegram as context only; they no longer trigger automatic exits.
 - Cash while waiting.
 
 This was selected because it was the strongest clean TQQQ-only setup among the tested practical variants while keeping the operational behavior simple.

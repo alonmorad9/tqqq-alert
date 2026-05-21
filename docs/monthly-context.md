@@ -17,15 +17,15 @@ The selected high-risk/high-reward TQQQ rule set is:
 
 | Rule | Current Value |
 |---|---:|
-| TQQQ trailing stop | 16% from highest high since entry |
+| TQQQ trailing stop | 25% from highest high since entry |
 | Profit target | Sell all at +20% from average cost |
 | Re-buy pullback | Buy after -5% from profit/manual exit price |
 | Profit re-buy timeout | 15 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI guard | RSI14 <= 80 |
-| Parabolic profit exit | 5-day return >= 25% OR 10-day return >= 30% |
+| Re-entry RSI guard | RSI14 <= 70 |
+| Parabolic profit exit | 5-day return >= 25% |
 | Waiting asset | Cash only |
-| Early-warning exit | Current 3-of-5 model |
+| Early-warning risk | Advisory only, no automatic sell |
 
 ## Entry And Re-entry
 
@@ -36,19 +36,18 @@ The bot can buy/re-buy TQQQ when one of the re-entry triggers is active and all 
 - Manual pullback: price is at least 5% below the manual sell price.
 - Manual timeout: 3 trading days passed since the manual sell, trend is still above SMA200.
 - SMA reset after manual sell: price first went below SMA200, then crossed back above it.
-- Early-risk recovery: after an early-warning sell, price is above SMA200 and SMA20.
+- Early-risk recovery: no longer used for automatic exits; warnings remain visible in Telegram.
 
-All buy/re-buy paths require `RSI14 <= 80`.
+All buy/re-buy paths require `RSI14 <= 70`.
 
 ## Exit Rules
 
 While holding TQQQ, the bot can tell the user to sell all when:
 
-- TQQQ falls below the 16% trailing stop.
+- TQQQ falls below the 25% trailing stop.
 - TQQQ crosses below SMA200.
 - TQQQ reaches +20% profit from average cost.
-- The early-warning model reaches 3 active warnings.
-- The parabolic rule is hit while the position is profitable.
+- The parabolic 5-day stretch rule is hit while the position is profitable.
 
 After any sell, the repo stays in cash and waits for the next TQQQ re-entry signal.
 
@@ -100,11 +99,12 @@ The bot-only benchmark models what would happen if the user followed only the bo
 
 הכללים הפעילים:
 
-- טריילינג סטופ של 16% מהשיא מאז הכניסה.
+- טריילינג סטופ של 25% מהשיא מאז הכניסה.
 - מכירה מלאה ברווח של 20%.
 - כניסה מחדש אחרי ירידה של 5% ממחיר היציאה. אחרי מכירת רווח רגילה הטיימאאוט הוא 15 ימי מסחר; אחרי מכירה ידנית הטיימאאוט הוא 3 ימי מסחר.
-- כניסה מחדש רק אם RSI14 קטן או שווה ל-80.
-- יציאת parabolic אם תשואת 5 ימים גדולה או שווה 25% או תשואת 10 ימים גדולה או שווה 30%.
+- כניסה מחדש רק אם RSI14 קטן או שווה ל-70.
+- יציאת parabolic אם תשואת 5 ימים גדולה או שווה 25%.
+- אזהרות סיכון נשארות בטלגרם כהקשר בלבד, ולא מוכרות אוטומטית.
 - בזמן המתנה: מזומן בלבד.
 
 מצב ידני:

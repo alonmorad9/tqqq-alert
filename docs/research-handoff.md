@@ -10,12 +10,12 @@ Current live rules:
 
 | Rule | Value |
 |---|---:|
-| TQQQ trailing stop | 25% |
+| TQQQ trailing stop | 16% |
 | Profit target | +20%, sell all |
-| Re-buy pullback | -7.5% from exit price |
-| Re-buy timeout | 20 trading days |
+| Re-buy pullback | -5% from exit price |
+| Re-buy timeout | 15 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI cap | RSI14 <= 70 |
+| Re-entry RSI cap | RSI14 <= 80 |
 | Parabolic exit | 5d >= 25% OR 10d >= 30% |
 | Waiting state | Cash |
 | Early-warning exit | 3-of-5 warnings |
@@ -26,12 +26,12 @@ The selected rule set came from the combined TQQQ strategy searches saved under 
 
 The best clean live rule family was:
 
-- 25% trailing stop.
+- 16% trailing stop.
 - +20% profit target.
-- -7.5% pullback re-entry.
-- 20 trading-day timeout after normal profit exits.
+- -5% pullback re-entry.
+- 15 trading-day timeout after normal profit exits.
 - 3 trading-day timeout after manual safety sells.
-- RSI14 <= 70 re-entry guard.
+- RSI14 <= 80 re-entry guard.
 - Parabolic profit exit using either 5-day or 10-day stretch.
 - Cash while waiting.
 

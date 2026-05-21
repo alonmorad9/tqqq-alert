@@ -21,7 +21,7 @@ The selected high-risk/high-reward TQQQ rule set is:
 | Profit target | Sell all at +20% from average cost |
 | Re-buy pullback | Buy after -7.5% from profit/manual exit price |
 | Profit re-buy timeout | 20 trading days |
-| Manual safety timeout | 20 trading days |
+| Manual safety timeout | 3 trading days |
 | Re-entry RSI guard | RSI14 <= 60 |
 | Parabolic profit exit | 5-day return >= 25% OR 10-day return >= 30% |
 | Waiting asset | Cash only |
@@ -34,7 +34,7 @@ The bot can buy/re-buy TQQQ when one of the re-entry triggers is active and all 
 - Profit pullback: price is at least 7.5% below the last profit-exit price.
 - Profit timeout: 20 trading days passed since the profit exit, trend is still above SMA200.
 - Manual pullback: price is at least 7.5% below the manual sell price.
-- Manual timeout: 20 trading days passed since the manual sell, trend is still above SMA200.
+- Manual timeout: 3 trading days passed since the manual sell, trend is still above SMA200.
 - SMA reset after manual sell: price first went below SMA200, then crossed back above it.
 - Early-risk recovery: after an early-warning sell, price is above SMA200 and SMA20.
 
@@ -96,7 +96,7 @@ The bot-only benchmark models what would happen if the user followed only the bo
 
 - טריילינג סטופ של 25% מהשיא מאז הכניסה.
 - מכירה מלאה ברווח של 20%.
-- כניסה מחדש אחרי ירידה של 7.5% ממחיר היציאה, או אחרי 20 ימי מסחר אם המגמה עדיין תקינה.
+- כניסה מחדש אחרי ירידה של 7.5% ממחיר היציאה. אחרי מכירת רווח רגילה הטיימאאוט הוא 20 ימי מסחר; אחרי מכירה ידנית הטיימאאוט הוא 3 ימי מסחר.
 - כניסה מחדש רק אם RSI14 קטן או שווה ל-60.
 - יציאת parabolic אם תשואת 5 ימים גדולה או שווה 25% או תשואת 10 ימים גדולה או שווה 30%.
 - בזמן המתנה: מזומן בלבד.

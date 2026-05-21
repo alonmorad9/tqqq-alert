@@ -21,7 +21,7 @@ TRAILING_STOP_PCT = 0.25
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.075
 SWING_REBUY_TIMEOUT_DAYS = 20
-MANUAL_REBUY_TIMEOUT_DAYS = 20
+MANUAL_REBUY_TIMEOUT_DAYS = 3
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
@@ -1371,6 +1371,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"⏳ Manual Wait:  {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS} trading days")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset:    {reset_status}")
+            lines.append(
+                f"🇮🇱 מצב ידני: קנייה מחדש רק אחרי ירידה של {SWING_REBUY_DROP_PCT * 100:.1f}%, "
+                f"או אחרי {MANUAL_REBUY_TIMEOUT_DAYS} ימי מסחר, או אחרי איפוס SMA200; תמיד רק אם RSI <= {REENTRY_RSI_MAX}."
+            )
         if not position_open:
             rsi_status = "ready" if reentry_rsi_ok else "too hot"
             lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({rsi_status})")
@@ -1388,7 +1392,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             *build_early_warning_lines(early_warning),
         ])
         if manual_exit_mode:
-            lines.append(f"Current controller: manual safety mode; re-buy waits for manual pullback or SMA200 reset, plus RSI <= {REENTRY_RSI_MAX}.")
+            lines.append(f"Current controller: manual safety mode; re-buy waits for pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset, plus RSI <= {REENTRY_RSI_MAX}.")
+            lines.append(f"🇮🇱 מצב בטיחות ידני: מחכים לירידה, טיימאאוט של {MANUAL_REBUY_TIMEOUT_DAYS} ימי מסחר, או איפוס SMA200; כניסה רק אם RSI <= {REENTRY_RSI_MAX}.")
         elif waiting_for_early_reentry:
             lines.append(f"Current controller: early-risk recovery; re-buy waits for TQQQ above SMA200 and SMA20, plus RSI <= {REENTRY_RSI_MAX}.")
         lines.extend([
@@ -1441,6 +1446,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"⏳ Manual Wait: {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS}")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset: {reset_status}")
+            lines.append(f"🇮🇱 מצב ידני: כניסה מחדש רק אחרי ירידה, {MANUAL_REBUY_TIMEOUT_DAYS} ימי מסחר, או איפוס SMA200; תמיד RSI <= {REENTRY_RSI_MAX}.")
         if waiting_for_early_reentry:
             lines.append(f"🔮 Early Re-buy: above SMA200 and SMA20, RSI <= {REENTRY_RSI_MAX}")
         if not position_open:
@@ -1529,8 +1535,16 @@ def mark_manual_sold():
         f"Tracked cash: ${cash:.2f}",
         "─" * 30,
         f"Re-buy pullback: ${rebuy_target:.2f}",
+        f"Or: after {MANUAL_REBUY_TIMEOUT_DAYS} trading days if TQQQ is still above SMA200.",
         "Or: wait for price to go below SMA200, then cross back above SMA200.",
+        f"All manual re-buy paths still require RSI14 <= {REENTRY_RSI_MAX}.",
         "The bot will not immediately re-buy just because TQQQ is currently above SMA200.",
+        "─" * 30,
+        "🇮🇱 מצב בטיחות ידני הופעל",
+        f"מחיר מכירה ידני: ${manual_price:.2f}",
+        f"מזומן במעקב: ${cash:.2f}",
+        f"קנייה מחדש: ירידה ל-${rebuy_target:.2f}, או אחרי {MANUAL_REBUY_TIMEOUT_DAYS} ימי מסחר אם TQQQ עדיין מעל SMA200.",
+        f"אפשרות נוספת: ירידה מתחת ל-SMA200 ואז חציה חזרה למעלה. בכל מקרה נדרש RSI14 <= {REENTRY_RSI_MAX}.",
     ]
     send_telegram("\n".join(lines))
     print(f"[MANUAL SOLD] Safety mode activated | Price: {manual_price:.2f} | Cash: {cash:.2f}")

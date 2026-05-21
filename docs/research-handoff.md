@@ -14,7 +14,7 @@ Current live rules:
 | Profit target | +20%, sell all |
 | Re-buy pullback | -7.5% from exit price |
 | Re-buy timeout | 20 trading days |
-| Manual safety timeout | 20 trading days |
+| Manual safety timeout | 3 trading days |
 | Re-entry RSI cap | RSI14 <= 60 |
 | Parabolic exit | 5d >= 25% OR 10d >= 30% |
 | Waiting state | Cash |
@@ -29,7 +29,8 @@ The best clean live rule family was:
 - 25% trailing stop.
 - +20% profit target.
 - -7.5% pullback re-entry.
-- 20 trading-day timeout.
+- 20 trading-day timeout after normal profit exits.
+- 3 trading-day timeout after manual safety sells.
 - RSI14 <= 60 re-entry guard.
 - Parabolic profit exit using either 5-day or 10-day stretch.
 - Cash while waiting.

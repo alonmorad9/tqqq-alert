@@ -17,19 +17,17 @@ on:
           - auto
           - manual_sold
           - manual_bought
-          - manual_parking_bought
-          - manual_parking_sold
-          - manual_swing_started
+          - manual_cash_set
       manual_price:
-        description: 'Price per share (required for manual_sold, manual_bought, manual_parking_bought, manual_parking_sold)'
+        description: 'TQQQ price per share (required for manual_sold and manual_bought)'
         required: false
         default: ''
       manual_amount:
-        description: 'Cash amount moved to real-stock swing mode (required for manual_swing_started)'
+        description: 'Tracked cash amount (required for manual_cash_set)'
         required: false
         default: ''
       manual_shares:
-        description: 'Shares bought (optional for manual_bought/manual_parking_bought — leave blank to use all tracked cash)'
+        description: 'TQQQ shares bought (optional for manual_bought — leave blank to use all tracked cash)'
         required: false
         default: ''
       schedule:

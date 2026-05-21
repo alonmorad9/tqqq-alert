@@ -12,15 +12,12 @@ ENTRY_DATE = "2026-04-29"
 SHARES = 40.4647
 AVG_COST = 61.54
 TICKER = "TQQQ"
-PARKING_TICKER = "XLK"
-WAITING_ASSET_ENABLED = False
 # ──────────────────────────────────────────────────────────
 
 STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
 TRAILING_STOP_PCT = 0.25
-PARKING_TRAILING_STOP_PCT = 0.05
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.075
 SWING_REBUY_TIMEOUT_DAYS = 20
@@ -240,10 +237,6 @@ def default_state():
         "avg_cost": AVG_COST,
         "shares": SHARES,
         "cash": 0.0,
-        "parking_ticker": PARKING_TICKER if WAITING_ASSET_ENABLED else None,
-        "parking_shares": 0.0,
-        "parking_avg_cost": None,
-        "parking_highest_high_since_entry": None,
         "highest_high_since_entry": None,
         "waiting_for_pullback": False,
         **clear_early_exit_fields(),
@@ -484,18 +477,14 @@ def fetch_market_data():
         raise RuntimeError(f"No market data returned for {TICKER}")
 
     qqq = daily_data("QQQ")
-    parking = daily_data(PARKING_TICKER)
     vix = daily_data("^VIX")
     if qqq.empty:
         raise RuntimeError("No market data returned for QQQ")
-    if parking.empty:
-        raise RuntimeError(f"No market data returned for {PARKING_TICKER}")
     if vix.empty:
         raise RuntimeError("No market data returned for ^VIX")
 
     intraday = intraday_data(TICKER)
     qqq_intraday = intraday_data("QQQ")
-    parking_intraday = intraday_data(PARKING_TICKER)
     vix_intraday = intraday_data("^VIX")
 
     live_source = "daily"
@@ -503,7 +492,6 @@ def fetch_market_data():
     market_open, _ = is_market_open(datetime.now(UTC))
     ticker, live_source, live_age = overlay_best_available(ticker, intraday, TICKER)
     qqq, qqq_live_source, qqq_live_age = overlay_best_available(qqq, qqq_intraday, "QQQ")
-    parking, parking_live_source, parking_live_age = overlay_best_available(parking, parking_intraday, PARKING_TICKER)
     vix, vix_live_source, vix_live_age = overlay_best_available(vix, vix_intraday, "^VIX")
 
     if market_open and live_source == "daily":
@@ -511,11 +499,6 @@ def fetch_market_data():
         raise RuntimeError(f"Live price is stale during market hours: {age_text}")
     if market_open and live_age is not None and live_age > MAX_LIVE_PRICE_AGE:
         raise RuntimeError(f"Live price is stale during market hours: {live_age}")
-    if market_open and parking_live_source == "daily":
-        age_text = "unavailable" if parking_live_age is None else str(parking_live_age)
-        raise RuntimeError(f"Live {PARKING_TICKER} price is stale during market hours: {age_text}")
-    if market_open and parking_live_age is not None and parking_live_age > MAX_LIVE_PRICE_AGE:
-        raise RuntimeError(f"Live {PARKING_TICKER} price is stale during market hours: {parking_live_age}")
 
     ticker["SMA200"] = ticker["Close"].rolling(window=200).mean()
     ticker["SMA20"] = ticker["Close"].rolling(window=20).mean()
@@ -541,10 +524,6 @@ def fetch_market_data():
     ticker = ticker.dropna(subset=["SMA200", "SMA20", "SMA50", "RSI14", "RET5", "RET10", "QQQ_Close", "QQQ_EMA21", "VIX_Close", "VIX_RET5"])
     ticker.attrs["price_source"] = live_source
     ticker.attrs["qqq_price_source"] = qqq_live_source
-    ticker.attrs["parking_ticker"] = PARKING_TICKER
-    ticker.attrs["parking_price"] = float(parking["Close"].iloc[-1])
-    ticker.attrs["parking_high"] = float(parking["High"].iloc[-1])
-    ticker.attrs["parking_price_source"] = parking_live_source
     ticker.attrs["vix_price_source"] = vix_live_source
     return ticker
 
@@ -559,67 +538,6 @@ def calculate_rsi(close, window):
 
 def money(value):
     return f"${value:.2f}"
-
-
-def parking_price(ticker):
-    return float(ticker.attrs.get("parking_price", 0.0))
-
-
-def parking_high(ticker):
-    return float(ticker.attrs.get("parking_high", parking_price(ticker)))
-
-
-def parking_value(state, ticker):
-    return float(state.get("parking_shares", 0.0)) * parking_price(ticker)
-
-
-def clear_parking_fields():
-    return {
-        "parking_ticker": PARKING_TICKER if WAITING_ASSET_ENABLED else None,
-        "parking_shares": 0.0,
-        "parking_avg_cost": None,
-        "parking_highest_high_since_entry": None,
-    }
-
-
-def clear_external_swing_fields():
-    return {
-        "external_swing_active": False,
-        "external_swing_amount": 0.0,
-        "external_swing_started_at": None,
-    }
-
-
-def park_cash_in_benchmark(state, ticker, cash):
-    if not WAITING_ASSET_ENABLED:
-        state.update(clear_parking_fields())
-        state["cash"] = round(cash, 2)
-        return cash
-
-    price = parking_price(ticker)
-    if cash <= 0 or price <= 0:
-        return cash
-
-    state.update({
-        "parking_ticker": PARKING_TICKER,
-        "parking_shares": round(cash / price, 6),
-        "parking_avg_cost": round(price, 4),
-        "parking_highest_high_since_entry": round(parking_high(ticker), 4),
-        "cash": 0.0,
-    })
-    return 0.0
-
-
-def unpark_benchmark_to_cash(state, ticker, cash):
-    shares = float(state.get("parking_shares", 0.0))
-    price = parking_price(ticker)
-    if shares <= 0 or price <= 0:
-        return cash
-
-    cash += shares * price
-    state.update(clear_parking_fields())
-    state["cash"] = round(cash, 2)
-    return cash
 
 
 def date_only(value):
@@ -658,12 +576,6 @@ def calculate_trailing_stop(highest_high):
     return round(float(highest_high) * (1 - TRAILING_STOP_PCT), 2)
 
 
-def calculate_parking_trailing_stop(highest_high):
-    if highest_high is None:
-        return None
-    return round(float(highest_high) * (1 - PARKING_TRAILING_STOP_PCT), 2)
-
-
 def trading_days_since(date_text, ticker):
     if not date_text:
         return 0
@@ -678,7 +590,6 @@ def clear_manual_exit_fields():
         "manual_exit_price": None,
         "manual_exit_date": None,
         "manual_exit_saw_below_sma": False,
-        **clear_external_swing_fields(),
     }
 
 
@@ -861,7 +772,6 @@ def update_bot_strategy_benchmark(ticker):
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
-    parking_shares = float(state.get("parking_shares", 0.0))
     waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
     waiting_for_early_reentry = bool(state.get("waiting_for_early_reentry", False))
     last_profit_sell_price = state.get("last_profit_sell_price")
@@ -883,24 +793,10 @@ def update_bot_strategy_benchmark(ticker):
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
-    if not position_open and parking_shares > 0:
-        updated_parking_high = max(
-            float(state.get("parking_highest_high_since_entry") or parking_high(ticker)),
-            parking_high(ticker),
-        )
-        if state.get("parking_highest_high_since_entry") != round(updated_parking_high, 4):
-            state["parking_highest_high_since_entry"] = round(updated_parking_high, 4)
-            state_changed = True
-    parking_trailing_stop = calculate_parking_trailing_stop(state.get("parking_highest_high_since_entry"))
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
-    hit_parking_trailing_stop = parking_shares > 0 and parking_trailing_stop is not None and parking_price(ticker) < parking_trailing_stop
-    hit_parking_disabled_exit = parking_shares > 0 and not WAITING_ASSET_ENABLED
-    hit_parking_defensive_exit = parking_shares > 0 and (
-        hit_parking_disabled_exit or current_price < sma200 or early_warning["hit"] or hit_parking_trailing_stop
-    )
     hit_profit_target = (
         position_open
         and shares > 0
@@ -932,16 +828,7 @@ def update_bot_strategy_benchmark(ticker):
         crossed_above_sma or (not state.get("last_action") and above_sma)
     ) and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
 
-    if not position_open and hit_parking_defensive_exit:
-        cash = unpark_benchmark_to_cash(state, ticker, cash)
-        action = "benchmark_sell_xlk_strategy_cash"
-        if hit_parking_trailing_stop:
-            action = "benchmark_sell_xlk_trailing_stop"
-        elif not hit_parking_disabled_exit:
-            action = "benchmark_sell_xlk_defensive"
-        state["last_action"] = action
-        state_changed = True
-    elif position_open and (hit_trailing_stop or crossed_below_sma):
+    if position_open and (hit_trailing_stop or crossed_below_sma):
         cash += shares * current_price
         action = "benchmark_sell_stop" if hit_trailing_stop else "benchmark_sell_sma200"
         state.update({
@@ -959,7 +846,6 @@ def update_bot_strategy_benchmark(ticker):
             "profit_exit_date": None,
             "last_action": action,
         })
-        cash = park_cash_in_benchmark(state, ticker, cash)
         state_changed = True
     elif position_open and hit_profit_target:
         cash += shares * current_price
@@ -979,7 +865,6 @@ def update_bot_strategy_benchmark(ticker):
             "profit_exit_date": current_date,
             "last_action": action,
         })
-        cash = park_cash_in_benchmark(state, ticker, cash)
         state_changed = True
     elif position_open and hit_early_warning_exit:
         cash += shares * current_price
@@ -999,7 +884,6 @@ def update_bot_strategy_benchmark(ticker):
             "early_exit_date": current_date,
             "last_action": action,
         })
-        cash = park_cash_in_benchmark(state, ticker, cash)
         state_changed = True
     elif position_open and hit_parabolic_exit:
         cash += shares * current_price
@@ -1019,10 +903,8 @@ def update_bot_strategy_benchmark(ticker):
             "profit_exit_date": current_date,
             "last_action": action,
         })
-        cash = park_cash_in_benchmark(state, ticker, cash)
         state_changed = True
     elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_early_reentry_signal):
-        cash = unpark_benchmark_to_cash(state, ticker, cash)
         buy_cash = cash
         buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
         if buy_shares > 0:
@@ -1050,17 +932,6 @@ def update_bot_strategy_benchmark(ticker):
             })
             state_changed = True
 
-    can_hold_parking_asset = WAITING_ASSET_ENABLED and current_price > sma200 and not early_warning["hit"]
-    if (
-        not bool(state.get("position_open", False))
-        and can_hold_parking_asset
-        and float(state.get("cash", 0.0)) > 0
-        and float(state.get("parking_shares", 0.0)) <= 0
-    ):
-        cash = park_cash_in_benchmark(state, ticker, float(state.get("cash", 0.0)))
-        action = "benchmark_park_xlk" if action == "benchmark_hold" else action
-        state_changed = True
-
     state.update(clear_manual_exit_fields())
     if state_changed:
         save_bot_strategy_state(state)
@@ -1069,18 +940,14 @@ def update_bot_strategy_benchmark(ticker):
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
-    parking_shares = float(state.get("parking_shares", 0.0))
-    parking_position_value = parking_shares * parking_price(ticker)
     waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
     waiting_for_early_reentry = bool(state.get("waiting_for_early_reentry", False))
     last_profit_sell_price = state.get("last_profit_sell_price")
     last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
     position_value = shares * current_price
-    total_value = cash + position_value + parking_position_value
+    total_value = cash + position_value
     if position_open:
         benchmark_status = "In TQQQ"
-    elif parking_shares > 0:
-        benchmark_status = f"In {PARKING_TICKER} while waiting"
     elif waiting_for_early_reentry:
         benchmark_status = "Waiting for early-risk recovery"
     elif waiting_for_pullback:
@@ -1094,9 +961,6 @@ def update_bot_strategy_benchmark(ticker):
         "action": action,
         "cash": cash,
         "position_open": position_open,
-        "parking_ticker": PARKING_TICKER,
-        "parking_shares": parking_shares,
-        "parking_value": parking_position_value,
         "shares": shares,
         "status": benchmark_status,
         "total_value": total_value,
@@ -1124,8 +988,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     shares = float(state["shares"])
     avg_cost = float(state["avg_cost"]) if state["avg_cost"] is not None else 0.0
     cash = float(state.get("cash", 0.0))
-    parking_shares = float(state.get("parking_shares", 0.0))
-    parking_avg_cost = float(state["parking_avg_cost"]) if state.get("parking_avg_cost") is not None else 0.0
     waiting_for_pullback = bool(state.get("waiting_for_pullback", False))
     waiting_for_early_reentry = bool(state.get("waiting_for_early_reentry", False))
     last_profit_sell_price = state.get("last_profit_sell_price")
@@ -1138,8 +1000,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     manual_exit_date = state.get("manual_exit_date")
     manual_wait_days = trading_days_since(manual_exit_date, ticker) if manual_exit_mode else 0
     manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
-    external_swing_active = bool(state.get("external_swing_active", False))
-    external_swing_amount = float(state.get("external_swing_amount", 0.0))
     state_changed = False
     state_dirty = False
     highest_high_since_entry = initialize_highest_high_since_entry(state, ticker)
@@ -1152,21 +1012,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
-    if not position_open and parking_shares > 0:
-        updated_parking_high = max(
-            float(state.get("parking_highest_high_since_entry") or parking_high(ticker)),
-            parking_high(ticker),
-        )
-        if state.get("parking_highest_high_since_entry") != round(updated_parking_high, 4):
-            state["parking_highest_high_since_entry"] = round(updated_parking_high, 4)
-            state_dirty = True
-    parking_trailing_stop = calculate_parking_trailing_stop(state.get("parking_highest_high_since_entry"))
-
-    current_parking_price = parking_price(ticker)
-    parking_position_value = parking_shares * current_parking_price
     position_value = shares * current_price
     cost_basis = shares * avg_cost
-    total_value = cash + position_value + parking_position_value
+    total_value = cash + position_value
     pnl = position_value - cost_basis if position_open else 0.0
     pnl_pct = (pnl / cost_basis) * 100 if cost_basis else 0.0
 
@@ -1175,11 +1023,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and early_warning["hit"]
-    hit_parking_trailing_stop = parking_shares > 0 and parking_trailing_stop is not None and current_parking_price < parking_trailing_stop
-    hit_parking_disabled_exit = parking_shares > 0 and not WAITING_ASSET_ENABLED
-    hit_parking_defensive_exit = parking_shares > 0 and (
-        hit_parking_disabled_exit or current_price < sma200 or early_warning["hit"] or hit_parking_trailing_stop
-    )
     hit_profit_target = (
         position_open
         and shares > 0
@@ -1241,19 +1084,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     action = None
     instruction_lines = []
 
-    if not position_open and hit_parking_defensive_exit:
-        action = f"🅿️ SELL {PARKING_TICKER} — WAIT IN CASH"
-        if hit_parking_disabled_exit:
-            instruction_lines.append("Reason: the selected TQQQ strategy now uses cash while waiting, not a waiting asset.")
-        if hit_parking_trailing_stop:
-            instruction_lines.append(f"Reason: {PARKING_TICKER} 5% trailing stop hit (${parking_trailing_stop:.2f}).")
-        if current_price < sma200:
-            instruction_lines.append(f"Reason: {TICKER} is below SMA200, so market-waiting exposure is no longer preferred.")
-        if early_warning["hit"]:
-            instruction_lines.append(f"Reason: early-drop risk is high ({', '.join(early_warning['active'])}).")
-        instruction_lines.append(f"Sell {PARKING_TICKER}: {parking_shares:.4f} shares")
-        instruction_lines.append(f"After selling, run manual_parking_sold with your actual {PARKING_TICKER} sell price.")
-    elif position_open and hit_trailing_stop:
+    if position_open and hit_trailing_stop:
         sell_shares = shares
         cash += sell_shares * current_price
         shares = 0.0
@@ -1374,70 +1205,63 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
         instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
     elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_manual_rebuy_signal or hit_early_reentry_signal):
-        if parking_shares > 0:
-            action = "🟢 RE-BUY SIGNAL — MOVE XLK TO TQQQ"
-            instruction_lines.append(f"Sell {PARKING_TICKER}: {parking_shares:.4f} shares")
-            instruction_lines.append(f"Then buy {TICKER} with the proceeds")
-            instruction_lines.append(f"After doing it, run manual_bought with your actual TQQQ buy price.")
+        buy_cash = cash
+        buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
+        if buy_shares > 0:
+            buy_reason = "buy_sma200"
+            action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
+            if hit_rebuy_pullback:
+                buy_reason = "buy_swing_pullback"
+                action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
+            elif hit_rebuy_timeout:
+                buy_reason = "buy_swing_timeout"
+                action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
+            elif hit_manual_rebuy_pullback:
+                buy_reason = "buy_manual_pullback"
+                action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
+            elif hit_manual_rebuy_reset:
+                buy_reason = "buy_manual_sma_reset"
+                action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
+            elif hit_manual_rebuy_timeout:
+                buy_reason = "buy_manual_timeout"
+                action = "🟢 RE-BUY SIGNAL — MANUAL TIMEOUT, TREND STILL OK"
+            elif hit_early_reentry_signal:
+                buy_reason = "buy_early_risk_recovery"
+                action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
+            shares = buy_shares
+            cash = 0.0
+            state.update({
+                "position_open": True,
+                "entry_date": ticker.index[-1].strftime("%Y-%m-%d"),
+                "avg_cost": round(current_price, 4),
+                "shares": round(shares, 6),
+                "cash": cash,
+                "highest_high_since_entry": round(current_high, 4),
+                "waiting_for_pullback": False,
+                **clear_early_exit_fields(),
+                "last_profit_sell_price": None,
+                "profit_exit_date": None,
+                **clear_manual_exit_fields(),
+                "last_action": buy_reason,
+            })
+            state_changed = True
+            instruction_lines.append(f"Buy with available cash: {money(buy_cash)}")
+            instruction_lines.append(f"Estimated shares: {buy_shares:.4f}")
         else:
-            buy_cash = cash
-            buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
-            if buy_shares > 0:
-                buy_reason = "buy_sma200"
-                action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
-                if hit_rebuy_pullback:
-                    buy_reason = "buy_swing_pullback"
-                    action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
-                elif hit_rebuy_timeout:
-                    buy_reason = "buy_swing_timeout"
-                    action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
-                elif hit_manual_rebuy_pullback:
-                    buy_reason = "buy_manual_pullback"
-                    action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
-                elif hit_manual_rebuy_reset:
-                    buy_reason = "buy_manual_sma_reset"
-                    action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
-                elif hit_manual_rebuy_timeout:
-                    buy_reason = "buy_manual_timeout"
-                    action = "🟢 RE-BUY SIGNAL — MANUAL TIMEOUT, TREND STILL OK"
-                elif hit_early_reentry_signal:
-                    buy_reason = "buy_early_risk_recovery"
-                    action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
-                shares = buy_shares
-                cash = 0.0
-                state.update({
-                    "position_open": True,
-                    "entry_date": ticker.index[-1].strftime("%Y-%m-%d"),
-                    "avg_cost": round(current_price, 4),
-                    "shares": round(shares, 6),
-                    "cash": cash,
-                    "highest_high_since_entry": round(current_high, 4),
-                    "waiting_for_pullback": False,
-                    **clear_early_exit_fields(),
-                    "last_profit_sell_price": None,
-                    "profit_exit_date": None,
-                    **clear_manual_exit_fields(),
-                    **clear_parking_fields(),
-                    "last_action": buy_reason,
-                })
-                state_changed = True
-                instruction_lines.append(f"Buy with available cash: {money(buy_cash)}")
-                instruction_lines.append(f"Estimated shares: {buy_shares:.4f}")
-            else:
-                action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
-                if hit_rebuy_pullback:
-                    action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
-                elif hit_rebuy_timeout:
-                    action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
-                elif hit_manual_rebuy_pullback:
-                    action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
-                elif hit_manual_rebuy_reset:
-                    action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
-                elif hit_manual_rebuy_timeout:
-                    action = "🟢 RE-BUY SIGNAL — MANUAL TIMEOUT, TREND STILL OK"
-                elif hit_early_reentry_signal:
-                    action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
-                instruction_lines.append("No tracked cash is available; update position_state.json after buying.")
+            action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
+            if hit_rebuy_pullback:
+                action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
+            elif hit_rebuy_timeout:
+                action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
+            elif hit_manual_rebuy_pullback:
+                action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
+            elif hit_manual_rebuy_reset:
+                action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
+            elif hit_manual_rebuy_timeout:
+                action = "🟢 RE-BUY SIGNAL — MANUAL TIMEOUT, TREND STILL OK"
+            elif hit_early_reentry_signal:
+                action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
+            instruction_lines.append("No tracked cash is available. Run manual_cash_set after you update your broker cash, or run manual_bought after buying.")
     elif position_open and trailing_stop is not None and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
     elif raw_reentry_trigger and not reentry_rsi_ok:
@@ -1448,8 +1272,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         action = "🔮 WAIT — Waiting for early-risk recovery"
     elif manual_exit_mode:
         action = "🧯 WAIT — Manual safety mode"
-    elif parking_shares > 0:
-        action = f"🅿️ WAIT — Holding {PARKING_TICKER} while waiting"
     elif current_price < sma200:
         action = "⏸️ WAIT — Price below SMA200" if not position_open else "⚠️ CAUTION — Price below SMA200"
     else:
@@ -1462,7 +1284,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     is_signal = is_signal or (not position_open and hit_rebuy_signal)
     is_signal = is_signal or (not position_open and hit_manual_rebuy_signal)
     is_signal = is_signal or (not position_open and hit_early_reentry_signal)
-    is_signal = is_signal or hit_parking_defensive_exit
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
@@ -1482,16 +1303,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
     highest_high_since_entry = state.get("highest_high_since_entry")
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
-    current_parking_price = parking_price(ticker)
-    parking_highest_high = state.get("parking_highest_high_since_entry")
-    parking_trailing_stop = calculate_parking_trailing_stop(parking_highest_high)
-    parking_position_value = parking_shares * current_parking_price
-    parking_cost_basis = parking_shares * parking_avg_cost
-    parking_pnl = parking_position_value - parking_cost_basis if parking_shares > 0 else 0.0
-    parking_pnl_pct = (parking_pnl / parking_cost_basis) * 100 if parking_cost_basis else 0.0
     position_value = shares * current_price
     cost_basis = shares * avg_cost
-    total_value = cash + position_value + parking_position_value
+    total_value = cash + position_value
     pnl = position_value - cost_basis if position_open else 0.0
     pnl_pct = (pnl / cost_basis) * 100 if cost_basis else 0.0
 
@@ -1506,8 +1320,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         position_status = "In position"
     elif manual_exit_mode:
         position_status = "Manual safety mode"
-    elif parking_shares > 0:
-        position_status = f"In {PARKING_TICKER} waiting asset"
     elif waiting_for_early_reentry:
         position_status = "Waiting for early-risk recovery"
     elif waiting_for_pullback:
@@ -1562,21 +1374,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         if not position_open:
             rsi_status = "ready" if reentry_rsi_ok else "too hot"
             lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({rsi_status})")
-            if parking_shares > 0:
-                lines.append(f"🅿️ Legacy Waiting Asset: {PARKING_TICKER} @ ${current_parking_price:.2f} ({ticker.attrs.get('parking_price_source', 'daily')})")
-                lines.append(f"   Holding: {parking_shares:.4f} shares / ${parking_position_value:.2f} ({parking_pnl_pct:+.2f}%)")
-                if parking_trailing_stop is not None:
-                    parking_stop_gap = ((parking_trailing_stop - current_parking_price) / current_parking_price) * 100
-                    lines.append(f"   XLK Trail Stop: ${parking_trailing_stop:.2f} ({parking_stop_gap:+.1f}% away)")
-            elif cash > 0:
+            if cash > 0:
                 lines.append("🅿️ Waiting Asset: Cash")
-                lines.append("   Plan: use real-stock-alert for temporary swing mode, or stay in cash.")
-                lines.append("   TQQQ has priority: sell swing stocks if this bot sends a re-entry signal.")
-            elif external_swing_active:
-                lines.append(f"🧩 External Swing: active in real-stock-alert (~${external_swing_amount:.2f} started)")
-                lines.append("   TQQQ has priority: sell swing stocks if this bot sends a re-entry signal.")
+                lines.append("   Plan: stay in cash until the next TQQQ buy/re-buy signal.")
             else:
-                lines.append("   Plan: no tracked cash or waiting asset.")
+                lines.append("   Plan: no tracked cash. Run manual_cash_set after updating broker cash.")
         lines.extend([
             "─" * 30,
             *risk_context_lines,
@@ -1595,14 +1397,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         ])
         if position_open:
             lines.append(f"💵 Avg Cost:     ${avg_cost:.2f}")
-        if parking_shares > 0:
-            lines.extend([
-                f"🅿️ {PARKING_TICKER} Shares: {parking_shares:.4f}",
-                f"🅿️ {PARKING_TICKER} Value:  ${parking_position_value:.2f}",
-                f"🅿️ {PARKING_TICKER} P&L:    ${parking_pnl:+.2f} ({parking_pnl_pct:+.2f}%)",
-            ])
-            if parking_trailing_stop is not None:
-                lines.append(f"🛑 {PARKING_TICKER} Stop:   ${parking_trailing_stop:.2f}")
         lines.extend([
             f"🏦 Cash:         ${cash:.2f}",
             f"💼 TQQQ Value:   ${position_value:.2f}",
@@ -1651,17 +1445,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🔮 Early Re-buy: above SMA200 and SMA20, RSI <= {REENTRY_RSI_MAX}")
         if not position_open:
             lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max")
-            if parking_shares > 0:
-                lines.append(f"🅿️ Legacy Waiting Asset: {PARKING_TICKER} @ ${current_parking_price:.2f}")
-                lines.append(f"🅿️ {PARKING_TICKER}: {parking_shares:.4f} shares / ${parking_position_value:.2f}")
-                lines.append(f"🅿️ {PARKING_TICKER} P&L: ${parking_pnl:+.2f} ({parking_pnl_pct:+.2f}%)")
-                if parking_trailing_stop is not None:
-                    lines.append(f"🛑 {PARKING_TICKER} Stop: ${parking_trailing_stop:.2f}")
-            else:
-                lines.append("🅿️ Waiting Asset: Cash")
-                lines.append("   TQQQ has priority over real-stock swing mode.")
-        if external_swing_active:
-            lines.append(f"🧩 External Swing: active (~${external_swing_amount:.2f} started)")
+            lines.append("🅿️ Waiting Asset: Cash")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",
@@ -1698,7 +1482,7 @@ def parse_manual_price(mode="manual_sold"):
     return price
 
 
-def parse_manual_amount(mode="manual_swing_started"):
+def parse_manual_amount(mode="manual_cash_set"):
     raw_amount = os.getenv("MANUAL_AMOUNT", "").strip()
     if not raw_amount:
         raise RuntimeError(f"{mode} mode requires MANUAL_AMOUNT / manual_amount input")
@@ -1733,7 +1517,6 @@ def mark_manual_sold():
         "manual_exit_price": round(manual_price, 4),
         "manual_exit_date": datetime.now(UTC).date().isoformat(),
         "manual_exit_saw_below_sma": False,
-        **clear_external_swing_fields(),
         "last_action": "manual_sold",
     })
     save_state(state)
@@ -1759,17 +1542,14 @@ def mark_manual_bought():
     cash = float(state.get("cash", 0.0))
 
     raw_shares = os.getenv("MANUAL_SHARES", "").strip()
-    external_swing_active = bool(state.get("external_swing_active", False))
     if raw_shares:
         shares = float(raw_shares)
         if shares <= 0:
             raise RuntimeError("manual_shares must be greater than 0")
         spent = shares * manual_price
         remaining_cash = round(cash - spent, 2)
-        if remaining_cash < -0.01 and not external_swing_active:
+        if remaining_cash < -0.01:
             raise RuntimeError(f"manual_shares implies spending ${spent:.2f} but only ${cash:.2f} tracked cash available")
-        if external_swing_active and remaining_cash < 0:
-            remaining_cash = 0.0
     else:
         shares = cash / manual_price if cash > 0 else 0.0
         remaining_cash = 0.0
@@ -1794,7 +1574,6 @@ def mark_manual_bought():
         "manual_exit_price": None,
         "manual_exit_date": None,
         "manual_exit_saw_below_sma": False,
-        **clear_external_swing_fields(),
         "last_action": "manual_bought",
     })
     save_state(state)
@@ -1814,112 +1593,30 @@ def mark_manual_bought():
     print(f"[MANUAL BOUGHT] Position recorded | Price: {manual_price:.2f} | Shares: {shares:.4f}")
 
 
-def mark_manual_parking_bought():
-    if not WAITING_ASSET_ENABLED:
-        raise RuntimeError("manual_parking_bought is disabled because the selected strategy now waits in cash.")
-
-    manual_price = parse_manual_price("manual_parking_bought")
+def mark_manual_cash_set():
+    amount = parse_manual_amount("manual_cash_set")
     state = load_state()
-    if bool(state.get("position_open", False)):
-        raise RuntimeError(f"manual_parking_bought is only for waiting mode, not while {TICKER} is open")
-
-    cash = float(state.get("cash", 0.0))
-    raw_shares = os.getenv("MANUAL_SHARES", "").strip()
-    if raw_shares:
-        shares = float(raw_shares)
-        if shares <= 0:
-            raise RuntimeError("manual_shares must be greater than 0")
-        spent = shares * manual_price
-        remaining_cash = round(cash - spent, 2)
-        if remaining_cash < -0.01:
-            raise RuntimeError(f"manual_shares implies spending ${spent:.2f} but only ${cash:.2f} tracked cash available")
-    else:
-        shares = cash / manual_price if cash > 0 else 0.0
-        remaining_cash = 0.0
-
-    if shares <= 0:
-        raise RuntimeError(f"No tracked cash available to buy {PARKING_TICKER} with")
-
     state.update({
-        "parking_ticker": PARKING_TICKER,
-        "parking_shares": round(shares, 6),
-        "parking_avg_cost": round(manual_price, 4),
-        "parking_highest_high_since_entry": round(manual_price, 4),
-        "cash": remaining_cash,
-        "last_action": f"manual_{PARKING_TICKER.lower()}_bought",
+        "position_open": False,
+        "shares": 0.0,
+        "avg_cost": None,
+        "cash": round(amount, 2),
+        "entry_date": None,
+        "highest_high_since_entry": None,
+        "last_action": "manual_cash_set",
     })
     save_state(state)
 
     lines = [
-        f"🅿️ Manual {PARKING_TICKER} Buy Recorded",
+        "🏦 Manual Cash Updated",
         "─" * 30,
-        f"Buy price:      ${manual_price:.2f}",
-        f"Shares bought:  {shares:.4f}",
-        f"Cash remaining: ${remaining_cash:.2f}",
+        f"Tracked cash: ${amount:.2f}",
         "─" * 30,
-        f"{PARKING_TICKER} is now tracked as the waiting asset.",
-        f"When TQQQ re-entry triggers, sell {PARKING_TICKER}, buy {TICKER}, then run manual_bought.",
+        "The TQQQ bot will wait in cash until the next TQQQ buy/re-buy signal.",
+        "Manual safety mode and re-entry rules remain unchanged.",
     ]
     send_telegram("\n".join(lines))
-    print(f"[MANUAL {PARKING_TICKER} BOUGHT] Price: {manual_price:.2f} | Shares: {shares:.4f}")
-
-
-def mark_manual_parking_sold():
-    manual_price = parse_manual_price("manual_parking_sold")
-    state = load_state()
-    shares = float(state.get("parking_shares", 0.0))
-    if shares <= 0:
-        raise RuntimeError(f"No tracked {PARKING_TICKER} shares to sell")
-    cash = float(state.get("cash", 0.0))
-    sale_value = shares * manual_price
-    cash += sale_value
-    state.update({
-        **clear_parking_fields(),
-        "cash": round(cash, 2),
-        "last_action": f"manual_{PARKING_TICKER.lower()}_sold",
-    })
-    save_state(state)
-
-    lines = [
-        f"🅿️ Manual {PARKING_TICKER} Sell Recorded",
-        "─" * 30,
-        f"Sell price:     ${manual_price:.2f}",
-        f"Shares sold:    {shares:.4f}",
-        f"Tracked cash:   ${cash:.2f}",
-        "─" * 30,
-        f"If you used this money to buy {TICKER}, run manual_bought with the actual TQQQ buy price.",
-    ]
-    send_telegram("\n".join(lines))
-    print(f"[MANUAL {PARKING_TICKER} SOLD] Price: {manual_price:.2f} | Cash: {cash:.2f}")
-
-
-def mark_manual_swing_started():
-    amount = parse_manual_amount()
-    state = load_state()
-    cash = float(state.get("cash", 0.0))
-    if amount > cash + 0.01:
-        raise RuntimeError(f"manual_amount ${amount:.2f} is greater than tracked cash ${cash:.2f}")
-    remaining_cash = round(cash - amount, 2)
-    state.update({
-        "cash": remaining_cash,
-        "external_swing_active": True,
-        "external_swing_amount": round(amount, 2),
-        "external_swing_started_at": datetime.now(UTC).date().isoformat(),
-        "last_action": "manual_swing_started",
-    })
-    save_state(state)
-
-    lines = [
-        "🧩 External Swing Mode Started",
-        "─" * 30,
-        f"Moved to real-stock-alert: ${amount:.2f}",
-        f"Remaining tracked TQQQ cash: ${remaining_cash:.2f}",
-        "─" * 30,
-        "Follow real-stock-alert while TQQQ is waiting.",
-        "If this bot sends a TQQQ re-entry signal, sell real-stock positions first, then buy TQQQ and run manual_bought here.",
-    ]
-    send_telegram("\n".join(lines))
-    print(f"[MANUAL SWING STARTED] Amount: {amount:.2f} | Remaining cash: {remaining_cash:.2f}")
+    print(f"[MANUAL CASH SET] Cash: {amount:.2f}")
 
 
 def run_auto_mode():
@@ -1968,9 +1665,9 @@ if __name__ == "__main__":
     # - auto: scheduled run; decide from cron + NASDAQ calendar
     # - daily: manual full report
     # - check: manual signal-only check
-    # - manual_parking_bought: disabled while the selected strategy waits in cash
-    # - manual_parking_sold: record legacy manual XLK waiting-asset sell
-    # - manual_swing_started: move tracked cash to real-stock-alert external swing mode
+    # - manual_sold: record a manual TQQQ sell and enter safety mode
+    # - manual_bought: record a manual TQQQ buy
+    # - manual_cash_set: set tracked cash after a broker-side cash update
     mode = sys.argv[1] if len(sys.argv) > 1 else "check"
 
     if mode == "auto":
@@ -1981,11 +1678,7 @@ if __name__ == "__main__":
         mark_manual_sold()
     elif mode == "manual_bought":
         mark_manual_bought()
-    elif mode == "manual_parking_bought":
-        mark_manual_parking_bought()
-    elif mode == "manual_parking_sold":
-        mark_manual_parking_sold()
-    elif mode == "manual_swing_started":
-        mark_manual_swing_started()
+    elif mode == "manual_cash_set":
+        mark_manual_cash_set()
     else:
         check_strategy(daily_report=False)

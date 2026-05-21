@@ -15,7 +15,7 @@ Current live rules:
 | Re-buy pullback | -7.5% from exit price |
 | Re-buy timeout | 20 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI cap | RSI14 <= 60 |
+| Re-entry RSI cap | RSI14 <= 70 |
 | Parabolic exit | 5d >= 25% OR 10d >= 30% |
 | Waiting state | Cash |
 | Early-warning exit | 3-of-5 warnings |
@@ -31,7 +31,7 @@ The best clean live rule family was:
 - -7.5% pullback re-entry.
 - 20 trading-day timeout after normal profit exits.
 - 3 trading-day timeout after manual safety sells.
-- RSI14 <= 60 re-entry guard.
+- RSI14 <= 70 re-entry guard.
 - Parabolic profit exit using either 5-day or 10-day stretch.
 - Cash while waiting.
 
@@ -63,4 +63,4 @@ Manual actions:
 
 The user manually sold TQQQ at `$67.37` and is in manual safety mode.
 
-If the broker cash is different from `position_state.json`, run `manual_cash_set` with the real broker cash amount. The next normal TQQQ buy/re-buy signal still requires the strategy filters, including RSI14 <= 60.
+If the broker cash is different from `position_state.json`, run `manual_cash_set` with the real broker cash amount. The next normal TQQQ buy/re-buy signal still requires the strategy filters, including RSI14 <= 70.

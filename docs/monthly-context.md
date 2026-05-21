@@ -22,7 +22,7 @@ The selected high-risk/high-reward TQQQ rule set is:
 | Re-buy pullback | Buy after -7.5% from profit/manual exit price |
 | Profit re-buy timeout | 20 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI guard | RSI14 <= 60 |
+| Re-entry RSI guard | RSI14 <= 70 |
 | Parabolic profit exit | 5-day return >= 25% OR 10-day return >= 30% |
 | Waiting asset | Cash only |
 | Early-warning exit | Current 3-of-5 model |
@@ -38,7 +38,7 @@ The bot can buy/re-buy TQQQ when one of the re-entry triggers is active and all 
 - SMA reset after manual sell: price first went below SMA200, then crossed back above it.
 - Early-risk recovery: after an early-warning sell, price is above SMA200 and SMA20.
 
-All buy/re-buy paths require `RSI14 <= 60`.
+All buy/re-buy paths require `RSI14 <= 70`.
 
 ## Exit Rules
 

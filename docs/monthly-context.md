@@ -65,15 +65,21 @@ Available GitHub Actions `workflow_dispatch` modes:
 
 ## Current Real-World State
 
-As of this cleanup, the bot is in manual safety mode from the manual TQQQ sell at `$67.37`.
+As of the latest local state inspection on 2026-05-21, the bot is back in an open TQQQ position:
 
-If broker cash is not equal to the repo's tracked cash, run:
+- Position open: `true`
+- Shares: `35.6658`
+- Average cost: `$75.20`
+- Entry date: `2026-05-21`
+- Cash: `$0.00`
+- Last action: `manual_broker_buy_sync`
+
+If broker cash or shares differ from the repo's tracked state, run the relevant manual sync action:
 
 1. GitHub Actions -> TQQQ Alert System -> Run workflow.
-2. Mode: `manual_cash_set`.
-3. `manual_amount`: the actual cash available for TQQQ after broker changes.
+2. Use `manual_bought` to sync a broker TQQQ buy, or `manual_cash_set` to sync cash after broker changes.
 
-Then run `daily` to confirm the Telegram message shows cash only.
+Then run `daily` to confirm the Telegram message shows the current TQQQ position and cash.
 
 ## Bot-Only Benchmark
 

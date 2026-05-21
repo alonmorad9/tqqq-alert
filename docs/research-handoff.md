@@ -61,6 +61,15 @@ Manual actions:
 
 ## Current State Guidance
 
-The user manually sold TQQQ at `$67.37` and is in manual safety mode.
+The user synced a manual broker TQQQ buy on 2026-05-21.
 
-If the broker cash is different from `position_state.json`, run `manual_cash_set` with the real broker cash amount. The next normal TQQQ buy/re-buy signal still requires the strategy filters, including RSI14 <= 70.
+Current inspected state:
+
+- `position_open`: `true`
+- `shares`: `35.6658`
+- `avg_cost`: `$75.20`
+- `entry_date`: `2026-05-21`
+- `cash`: `$0.00`
+- `last_action`: `manual_broker_buy_sync`
+
+While this position is open, follow the active-position exit/risk rules. If the broker cash or shares differ from `position_state.json`, run the relevant manual sync action.

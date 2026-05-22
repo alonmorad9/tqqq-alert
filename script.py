@@ -701,8 +701,9 @@ def build_risk_context(ticker, current_price, sma200, trailing_stop):
 
     notes = ", ".join(risk_notes) if risk_notes else "no major warning"
     return [
-        "🧭 Risk Context: advisory only",
-        "What it means: market health notes only; this section does not buy/sell by itself.",
+        "🧭 Market Health — advisory only",
+        "Meaning: background risk notes. This section never buys or sells by itself.",
+        "What to do: use it to understand how stretched or calm the market is.",
         f"Trend:         {trend}",
         f"Momentum:      {momentum} (RSI14 {rsi14:.1f})",
         f"ATR14:         ${atr14:.2f} ({atr_pct:.1f}% daily range)",
@@ -713,11 +714,24 @@ def build_risk_context(ticker, current_price, sma200, trailing_stop):
 
 def build_early_warning_lines(early_warning):
     active = ", ".join(early_warning["active"]) if early_warning["active"] else "none"
+    fast_drop_combo = (
+        "VIX 5d spike >= 25%" in early_warning["active"]
+        and "RSI falling from 70+" in early_warning["active"]
+    )
+    if fast_drop_combo:
+        fast_drop_note = "Active: VIX fear spike + RSI rollover. Consider manually tightening your broker/TradingView stop."
+        fast_drop_note_he = "פעיל: קפיצה ב-VIX + RSI מתגלגל למטה. לשקול ידנית הידוק סטופ בברוקר/TradingView."
+    else:
+        fast_drop_note = "Not active."
+        fast_drop_note_he = "לא פעיל."
     return [
-        "🔮 Early Drop Risk",
-        "What it means: advisory only; this does not sell by itself.",
+        "🔮 Early Drop Warnings — advisory only",
+        "Meaning: faster weakness signals. They do NOT auto-sell because backtests showed too many false exits.",
+        "What to do: if warnings stack up, be more alert and consider manual stop tightening.",
         f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active)",
         f"Active:        {active}",
+        f"Fast combo:    {fast_drop_note}",
+        f"🇮🇱 שילוב מהיר: {fast_drop_note_he}",
         f"VIX:           {early_warning['vix']:.2f} ({early_warning['vix_ret5']:+.1%} over 5d)",
         f"QQQ vs EMA21:  ${early_warning['qqq_close']:.2f} / ${early_warning['qqq_ema21']:.2f}",
     ]
@@ -749,8 +763,9 @@ def build_parabolic_warning_lines(ticker):
     level = "Watch" if active else "Low"
     active_text = ", ".join(active) if active else "none"
     return [
-        "⚡ Parabolic Stretch",
-        "What it means: can trigger a profit-style sell only while a normal TQQQ position is open and profitable.",
+        "⚡ Parabolic Profit Rule",
+        "Meaning: this CAN trigger SELL ALL, but only when TQQQ is open, profitable, and has spiked unusually fast.",
+        "What to do: if Action says SELL, sell; otherwise it is just a stretch meter.",
         f"Level:         {level}",
         f"Active:        {active_text}",
         f"5d / 10d Ret:  {ret5:+.1%} / {ret10:+.1%}",
@@ -1349,6 +1364,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"📊 TQQQ {report_title} — {date_str}",
             "─" * 30,
             f"Action: {action}",
+            "Read first: follow the Action line. The risk sections below explain context unless they explicitly create the Action.",
             *instruction_lines,
             "─" * 30,
             f"Mode:          {position_status}",
@@ -1429,6 +1445,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         lines = [
             "─" * 30,
             action,
+            "Read first: follow this Action. Extra risk notes are context only unless this is a SELL/BUY signal.",
             *instruction_lines,
             "─" * 30,
             f"💰 Price:      ${current_price:.2f}",

@@ -34,6 +34,7 @@ The best clean live rule family was:
 - RSI14 <= 70 re-entry guard.
 - Parabolic profit exit using the 5-day stretch.
 - Early-warning signals remain in Telegram as context only; they no longer trigger automatic exits.
+- The fast-drop combo `VIX 5d spike >= 25%` plus `RSI falling from 70+` is highlighted clearly as advisory guidance to consider manual stop tightening.
 - Cash while waiting.
 
 This was selected because it was the strongest clean TQQQ-only setup among the tested practical variants while keeping the operational behavior simple.
@@ -53,6 +54,7 @@ Telegram reports should include:
 - Total tracked value.
 - Bot-only benchmark.
 - Risk context and early-drop risk explanations.
+- A clear "Read first" line explaining that the `Action` is the instruction and the risk sections are context unless they created that action.
 
 Manual actions:
 

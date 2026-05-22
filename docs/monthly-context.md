@@ -9,6 +9,7 @@ The live repo is now **TQQQ-only**.
 - No waiting ETF is tracked by this repo.
 - When out of TQQQ, the bot waits in cash.
 - Telegram messages should show only TQQQ, cash, risk context, and the bot-only benchmark.
+- Telegram messages include a "Read first" line: follow the `Action`; risk sections explain context unless they explicitly create that action.
 - If broker cash changes manually, use `manual_cash_set` to update the tracked cash.
 
 ## Live Strategy
@@ -37,6 +38,7 @@ The bot can buy/re-buy TQQQ when one of the re-entry triggers is active and all 
 - Manual timeout: 3 trading days passed since the manual sell, trend is still above SMA200.
 - SMA reset after manual sell: price first went below SMA200, then crossed back above it.
 - Early-risk recovery: no longer used for automatic exits; warnings remain visible in Telegram.
+- Fast-drop combo warning: `VIX 5d spike >= 25%` plus `RSI falling from 70+`. This is advisory only and suggests considering a manual broker/TradingView stop tighten.
 
 All buy/re-buy paths require `RSI14 <= 70`.
 
@@ -105,6 +107,7 @@ The bot-only benchmark models what would happen if the user followed only the bo
 - כניסה מחדש רק אם RSI14 קטן או שווה ל-70.
 - יציאת parabolic אם תשואת 5 ימים גדולה או שווה 25%.
 - אזהרות סיכון נשארות בטלגרם כהקשר בלבד, ולא מוכרות אוטומטית.
+- אם מופיע שילוב מהיר של קפיצה ב-VIX ו-RSI יורד, זו אזהרה בלבד: לשקול ידנית הידוק סטופ בברוקר או ב-TradingView.
 - בזמן המתנה: מזומן בלבד.
 
 מצב ידני:

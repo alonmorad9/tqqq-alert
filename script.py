@@ -705,10 +705,10 @@ def build_risk_context(ticker, current_price, sma200, trailing_stop):
         "Meaning: background risk notes. This section never buys or sells by itself.",
         "What to do: use it to understand how stretched or calm the market is.",
         f"Trend:         {trend}",
-        f"Momentum:      {momentum} (RSI14 {rsi14:.1f})",
-        f"ATR14:         ${atr14:.2f} ({atr_pct:.1f}% daily range)",
-        f"ATR Ref Stop:  ${atr_stop_4x:.2f} (4x ATR, not active)",
-        f"Risk Level:    {risk_level} — {notes}",
+        f"Momentum:      {momentum} (RSI14 {rsi14:.1f}) — high RSI means the move is strong but more stretched.",
+        f"ATR14:         ${atr14:.2f} ({atr_pct:.1f}% daily range) — average daily movement; higher ATR means wider normal swings.",
+        f"ATR Ref Stop:  ${atr_stop_4x:.2f} (4x ATR, not active) — reference only, not the bot's real stop.",
+        f"Risk Level:    {risk_level} — summary of stretch, volatility, and distance from key stops: {notes}.",
     ]
 
 
@@ -719,21 +719,18 @@ def build_early_warning_lines(early_warning):
         and "RSI falling from 70+" in early_warning["active"]
     )
     if fast_drop_combo:
-        fast_drop_note = "Active: VIX fear spike + RSI rollover. Consider manually tightening your broker/TradingView stop."
-        fast_drop_note_he = "פעיל: קפיצה ב-VIX + RSI מתגלגל למטה. לשקול ידנית הידוק סטופ בברוקר/TradingView."
+        fast_drop_note = "Active — VIX fear is rising and RSI is rolling over. Consider manually tightening your broker/TradingView stop."
     else:
-        fast_drop_note = "Not active."
-        fast_drop_note_he = "לא פעיל."
+        fast_drop_note = "Not active — no combined fear spike + momentum rollover signal."
     return [
         "🔮 Early Drop Warnings — advisory only",
         "Meaning: faster weakness signals. They do NOT auto-sell because backtests showed too many false exits.",
         "What to do: if warnings stack up, be more alert and consider manual stop tightening.",
-        f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active)",
+        f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active) — more active warnings means higher short-term drop risk.",
         f"Active:        {active}",
         f"Fast combo:    {fast_drop_note}",
-        f"🇮🇱 שילוב מהיר: {fast_drop_note_he}",
-        f"VIX:           {early_warning['vix']:.2f} ({early_warning['vix_ret5']:+.1%} over 5d)",
-        f"QQQ vs EMA21:  ${early_warning['qqq_close']:.2f} / ${early_warning['qqq_ema21']:.2f}",
+        f"VIX:           {early_warning['vix']:.2f} ({early_warning['vix_ret5']:+.1%} over 5d) — rising VIX means fear/volatility is increasing.",
+        f"QQQ vs EMA21:  ${early_warning['qqq_close']:.2f} / ${early_warning['qqq_ema21']:.2f} — QQQ below EMA21 means Nasdaq momentum is weakening.",
     ]
 
 
@@ -766,9 +763,9 @@ def build_parabolic_warning_lines(ticker):
         "⚡ Parabolic Profit Rule",
         "Meaning: this CAN trigger SELL ALL, but only when TQQQ is open, profitable, and has spiked unusually fast.",
         "What to do: if Action says SELL, sell; otherwise it is just a stretch meter.",
-        f"Level:         {level}",
+        f"Level:         {level} — Watch means the spike rule is active; Low means no parabolic sell pressure.",
         f"Active:        {active_text}",
-        f"5d / 10d Ret:  {ret5:+.1%} / {ret10:+.1%}",
+        f"5d / 10d Ret:  {ret5:+.1%} / {ret10:+.1%} — shows how fast TQQQ has moved recently.",
     ]
 
 
@@ -1389,8 +1386,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset:    {reset_status}")
             lines.append(
-                f"🇮🇱 מצב ידני: קנייה מחדש רק אחרי ירידה של {SWING_REBUY_DROP_PCT * 100:.1f}%, "
-                f"או אחרי {MANUAL_REBUY_TIMEOUT_DAYS} ימי מסחר, או אחרי איפוס SMA200; תמיד רק אם RSI <= {REENTRY_RSI_MAX}."
+                f"Manual mode rule: re-buy only after a {SWING_REBUY_DROP_PCT * 100:.1f}% pullback, "
+                f"after {MANUAL_REBUY_TIMEOUT_DAYS} trading days, or after an SMA200 reset; always requires RSI <= {REENTRY_RSI_MAX}."
             )
         if not position_open:
             rsi_status = "ready" if reentry_rsi_ok else "too hot"
@@ -1410,7 +1407,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         ])
         if manual_exit_mode:
             lines.append(f"Current controller: manual safety mode; re-buy waits for pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset, plus RSI <= {REENTRY_RSI_MAX}.")
-            lines.append(f"🇮🇱 מצב בטיחות ידני: מחכים לירידה, טיימאאוט של {MANUAL_REBUY_TIMEOUT_DAYS} ימי מסחר, או איפוס SMA200; כניסה רק אם RSI <= {REENTRY_RSI_MAX}.")
         elif waiting_for_early_reentry:
             lines.append(f"Current controller: early-risk recovery; re-buy waits for TQQQ above SMA200 and SMA20, plus RSI <= {REENTRY_RSI_MAX}.")
         lines.extend([
@@ -1464,7 +1460,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"⏳ Manual Wait: {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS}")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset: {reset_status}")
-            lines.append(f"🇮🇱 מצב ידני: כניסה מחדש רק אחרי ירידה, {MANUAL_REBUY_TIMEOUT_DAYS} ימי מסחר, או איפוס SMA200; תמיד RSI <= {REENTRY_RSI_MAX}.")
+            lines.append(f"Manual mode rule: re-buy only after pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset; always RSI <= {REENTRY_RSI_MAX}.")
         if waiting_for_early_reentry:
             lines.append(f"🔮 Early Re-buy: above SMA200 and SMA20, RSI <= {REENTRY_RSI_MAX}")
         if not position_open:
@@ -1557,12 +1553,6 @@ def mark_manual_sold():
         "Or: wait for price to go below SMA200, then cross back above SMA200.",
         f"All manual re-buy paths still require RSI14 <= {REENTRY_RSI_MAX}.",
         "The bot will not immediately re-buy just because TQQQ is currently above SMA200.",
-        "─" * 30,
-        "🇮🇱 מצב בטיחות ידני הופעל",
-        f"מחיר מכירה ידני: ${manual_price:.2f}",
-        f"מזומן במעקב: ${cash:.2f}",
-        f"קנייה מחדש: ירידה ל-${rebuy_target:.2f}, או אחרי {MANUAL_REBUY_TIMEOUT_DAYS} ימי מסחר אם TQQQ עדיין מעל SMA200.",
-        f"אפשרות נוספת: ירידה מתחת ל-SMA200 ואז חציה חזרה למעלה. בכל מקרה נדרש RSI14 <= {REENTRY_RSI_MAX}.",
     ]
     send_telegram("\n".join(lines))
     print(f"[MANUAL SOLD] Safety mode activated | Price: {manual_price:.2f} | Cash: {cash:.2f}")

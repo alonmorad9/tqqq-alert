@@ -719,7 +719,7 @@ def build_early_warning_lines(early_warning):
         and "RSI falling from 70+" in early_warning["active"]
     )
     if fast_drop_combo:
-        fast_drop_note = "Active — VIX fear is rising and RSI is rolling over. Consider manually tightening your broker/TradingView stop."
+        fast_drop_note = "IMPORTANT WARNING ACTIVE — VIX fear is rising and RSI is rolling over. Do not ignore this; consider manually tightening your broker/TradingView stop."
     else:
         fast_drop_note = "Not active — no combined fear spike + momentum rollover signal."
     return [

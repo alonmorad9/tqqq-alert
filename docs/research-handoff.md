@@ -39,6 +39,25 @@ The best clean live rule family was:
 
 This was selected because it was the strongest clean TQQQ-only setup among the tested practical variants while keeping the operational behavior simple.
 
+## Free Breadth / Sector Leadership Test
+
+On 2026-05-24, tested free sector-leadership ideas using the local historical export with TQQQ, QQQ, VIX, and XLK.
+
+Research script:
+
+- `research/breadth_sector_strategy_search.py`
+
+Saved result:
+
+- `research/out/breadth_sector_strategy_results.csv`
+
+Conclusion:
+
+- The current TQQQ-only strategy remained best: `585.2x`, `54.3% CAGR`, `-36.4% max drawdown`.
+- The best XLK/QQQ leadership variant reached `472.9x`, `52.1% CAGR`, `-36.4% max drawdown`.
+- Most sector-leadership exits caused too many false exits and reduced compounding.
+- Do not add XLK/QQQ leadership as an automatic sell rule unless future broader Nasdaq-100 breadth research proves stronger.
+
 ## Operational Notes
 
 The repo should not fetch or report any non-TQQQ waiting asset.

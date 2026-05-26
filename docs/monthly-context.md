@@ -1,6 +1,6 @@
 # TQQQ Bot Monthly Context
 
-Last updated: 2026-05-21
+Last updated: 2026-05-26
 
 ## Current Decision
 
@@ -66,7 +66,7 @@ Available GitHub Actions `workflow_dispatch` modes:
 
 ## Current Real-World State
 
-As of the latest local state inspection on 2026-05-21, the bot is back in an open TQQQ position:
+As of the latest local state inspection on 2026-05-26, the bot is still in an open TQQQ position:
 
 - Position open: `true`
 - Shares: `35.6658`
@@ -74,6 +74,13 @@ As of the latest local state inspection on 2026-05-21, the bot is back in an ope
 - Entry date: `2026-05-21`
 - Cash: `$0.00`
 - Last action: `manual_broker_buy_sync`
+- Last report key: `2026-05-22:close`
+
+Current alignment for month-end testing:
+
+- `tqqq-alert` remains the real master strategy.
+- `real-stock-alert` remains inactive for real cash while this TQQQ position is open, but its bot-only stock benchmark can keep running for comparison.
+- `swing-stock-alert` remains paused and should be used only as optional historical paper-demo context.
 
 If broker cash or shares differ from the repo's tracked state, run the relevant manual sync action:
 

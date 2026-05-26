@@ -1,6 +1,6 @@
 # TQQQ Research Handoff
 
-Last updated: 2026-05-21
+Last updated: 2026-05-26
 
 ## Current Strategy
 
@@ -85,7 +85,7 @@ Manual actions:
 
 The user synced a manual broker TQQQ buy on 2026-05-21.
 
-Current inspected state:
+Current inspected state on 2026-05-26:
 
 - `position_open`: `true`
 - `shares`: `35.6658`
@@ -93,5 +93,8 @@ Current inspected state:
 - `entry_date`: `2026-05-21`
 - `cash`: `$0.00`
 - `last_action`: `manual_broker_buy_sync`
+- `last_report_key`: `2026-05-22:close`
 
 While this position is open, follow the active-position exit/risk rules. If the broker cash or shares differ from `position_state.json`, run the relevant manual sync action.
+
+Month-end comparison should treat this repo as the real source of truth. The real-stock repo is only an optional TQQQ-out stock engine while this repo is out/waiting, and the old swing-stock repo is paused historical context.

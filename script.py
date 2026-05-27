@@ -957,6 +957,8 @@ def update_bot_strategy_benchmark(ticker):
     waiting_for_early_reentry = bool(state.get("waiting_for_early_reentry", False))
     last_profit_sell_price = state.get("last_profit_sell_price")
     last_profit_sell_price = float(last_profit_sell_price) if last_profit_sell_price is not None else None
+    profit_exit_date = state.get("profit_exit_date")
+    pullback_wait_days = trading_days_since(profit_exit_date, ticker) if waiting_for_pullback else 0
     position_value = shares * current_price
     total_value = cash + position_value
     if position_open:
@@ -979,6 +981,12 @@ def update_bot_strategy_benchmark(ticker):
         "total_value": total_value,
         "next_profit_target": next_profit_target,
         "rebuy_target": rebuy_target,
+        "last_profit_sell_price": last_profit_sell_price,
+        "profit_exit_date": profit_exit_date,
+        "pullback_wait_days": pullback_wait_days,
+        "waiting_for_pullback": waiting_for_pullback,
+        "waiting_for_early_reentry": waiting_for_early_reentry,
+        "last_action": state.get("last_action"),
         "early_warning": early_warning,
         "reentry_rsi_ok": reentry_rsi_ok,
     }
@@ -1343,6 +1351,35 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     price_source = ticker.attrs.get("price_source", "daily")
     strategy_gap = total_value - bot_strategy["total_value"]
     strategy_gap_pct = (strategy_gap / bot_strategy["total_value"]) * 100 if bot_strategy["total_value"] else 0.0
+    benchmark_rebuy_target = bot_strategy.get("rebuy_target")
+    benchmark_next_profit_target = bot_strategy.get("next_profit_target")
+    benchmark_wait_days = int(bot_strategy.get("pullback_wait_days") or 0)
+    benchmark_rsi_status = "ready" if bot_strategy.get("reentry_rsi_ok") else "too hot"
+    benchmark_last_action = bot_strategy.get("last_action") or bot_strategy.get("action")
+    benchmark_lines = [
+        "🧪 Bot-Only Benchmark",
+        "Meaning: what would happen if you followed only bot signals and made no manual moves.",
+        f"Mode:          {bot_strategy['status']}",
+        f"Last Action:   {benchmark_last_action}",
+        f"Cash:          ${bot_strategy['cash']:.2f}",
+        f"Shares:        {bot_strategy['shares']:.4f}",
+        f"📊 Total:        ${bot_strategy['total_value']:.2f}",
+    ]
+    if bot_strategy["position_open"]:
+        benchmark_lines.append(f"Next Profit:   ${benchmark_next_profit_target:.2f} (+{SWING_PROFIT_TARGET_PCT * 100:.0f}%)")
+        benchmark_lines.append("Rule now: benchmark is holding TQQQ until profit target, parabolic exit, SMA200 exit, or trailing stop.")
+    elif bot_strategy.get("waiting_for_pullback"):
+        benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
+        benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
+        benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
+        benchmark_lines.append("Rule now: benchmark waits for pullback or timeout, and still needs RSI to be ready.")
+    elif bot_strategy.get("waiting_for_early_reentry"):
+        benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
+        benchmark_lines.append("Rule now: benchmark waits for recovery above SMA200 and SMA20, with RSI ready.")
+    else:
+        benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
+        benchmark_lines.append("Rule now: benchmark waits for a fresh TQQQ entry signal.")
+    benchmark_lines.append(f"Vs Real Path:   ${strategy_gap:+.2f} ({strategy_gap_pct:+.2f}%)")
 
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
@@ -1421,10 +1458,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"📊 Total:        ${total_value:.2f}",
             f"{pnl_emoji} TQQQ P&L:     ${pnl:+.2f} ({pnl_pct:+.2f}%)",
             "─" * 30,
-            "🧪 Bot-Only Benchmark",
-            f"Mode:          {bot_strategy['status']}",
-            f"📊 Total:        ${bot_strategy['total_value']:.2f}",
-            f"Vs Real Path:   ${strategy_gap:+.2f} ({strategy_gap_pct:+.2f}%)",
+            *benchmark_lines,
             "─" * 30,
             f"Entry Date:      {state.get('entry_date') or 'Waiting for entry'}",
         ])

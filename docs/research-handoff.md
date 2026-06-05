@@ -1,6 +1,6 @@
 # TQQQ Research Handoff
 
-Last updated: 2026-05-29
+Last updated: 2026-06-05
 
 ## Current Strategy
 
@@ -83,21 +83,21 @@ Manual actions:
 
 ## Current State Guidance
 
-The user synced a manual broker TQQQ sell on 2026-05-29.
+The user synced a manual broker TQQQ buy on 2026-06-04.
 
-Current inspected state on 2026-05-29:
+Current inspected state on 2026-06-05:
 
-- `position_open`: `false`
-- `shares`: `0.0`
-- `avg_cost`: `null`
-- `entry_date`: `null`
-- `cash`: `$3,028.38`
-- `last_action`: `manual_broker_sell_sync`
-- `manual_exit_mode`: `true`
-- `manual_exit_price`: `$84.91`
-- `manual_exit_date`: `2026-05-29`
-- `last_report_key`: `2026-05-29:open`
+- `position_open`: `true`
+- `shares`: `35.3032`
+- `avg_cost`: `$83.84`
+- `entry_date`: `2026-06-04`
+- `cash`: `$4.80`
+- `last_action`: `manual_broker_buy_sync`
+- `manual_exit_mode`: `false`
+- `manual_exit_price`: `null`
+- `manual_exit_date`: `null`
+- `last_report_key`: `2026-06-04:close`
 
-While this manual safety cash state is active, follow the TQQQ re-entry rules. If the broker cash or shares differ from `position_state.json`, run the relevant manual sync action.
+While this position is open, follow the active-position exit/risk rules. If the broker cash or shares differ from `position_state.json`, run the relevant manual sync action.
 
-Month-end comparison should treat this repo as the real source of truth. The real-stock repo is the optional TQQQ-out stock engine while this repo is out/waiting, and the old swing-stock repo is paused historical context.
+Month-end comparison should treat this repo as the real source of truth. The real-stock repo is only an optional TQQQ-out stock engine while this repo is out/waiting, and the old swing-stock repo is paused historical context.

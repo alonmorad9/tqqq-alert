@@ -1,6 +1,6 @@
 # TQQQ Bot Monthly Context
 
-Last updated: 2026-05-29
+Last updated: 2026-06-05
 
 ## Current Decision
 
@@ -66,22 +66,23 @@ Available GitHub Actions `workflow_dispatch` modes:
 
 ## Current Real-World State
 
-As of the latest local state inspection on 2026-05-29, the bot is out of TQQQ in manual safety cash mode:
+As of the latest local state inspection on 2026-06-05, the bot is back in an open TQQQ position after a manual broker buy sync:
 
-- Position open: `false`
-- Shares: `0.0`
-- Average cost: `null`
-- Entry date: `null`
-- Cash: `$3,028.38`
-- Last action: `manual_broker_sell_sync`
-- Manual exit price: `$84.91`
-- Manual exit date: `2026-05-29`
-- Last report key: `2026-05-29:open`
+- Position open: `true`
+- Shares: `35.3032`
+- Average cost: `$83.84`
+- Entry date: `2026-06-04`
+- Cash: `$4.80`
+- Last action: `manual_broker_buy_sync`
+- Manual exit mode: `false`
+- Manual exit price: `null`
+- Manual exit date: `null`
+- Last report key: `2026-06-04:close`
 
 Current alignment for month-end testing:
 
 - `tqqq-alert` remains the real master strategy.
-- `real-stock-alert` may use the freed `$3,028.38` as the optional real-stock swing bucket while TQQQ is out/waiting, but any TQQQ re-buy signal has priority.
+- `real-stock-alert` should have `$0.00` deployable real-stock cash while this TQQQ position is open, but its bot-only stock benchmark can keep running for comparison.
 - `swing-stock-alert` remains paused and should be used only as optional historical paper-demo context.
 
 If broker cash or shares differ from the repo's tracked state, run the relevant manual sync action:

@@ -68,18 +68,19 @@ Available GitHub Actions `workflow_dispatch` modes:
 
 ## Current Real-World State
 
-As of the latest local state inspection on 2026-06-05, the bot is back in an open TQQQ position after a manual broker buy sync:
+As of the latest local state inspection on 2026-06-07, the bot is in an open TQQQ position after a manual broker buy sync:
 
 - Position open: `true`
 - Shares: `35.3032`
 - Average cost: `$83.84`
 - Entry date: `2026-06-04`
+- Highest high since entry: `$86.25`
 - Cash: `$4.80`
 - Last action: `manual_broker_buy_sync`
 - Manual exit mode: `false`
 - Manual exit price: `null`
 - Manual exit date: `null`
-- Last report key: `2026-06-04:close`
+- Last report key: `2026-06-05:close`
 
 Current alignment for month-end testing:
 

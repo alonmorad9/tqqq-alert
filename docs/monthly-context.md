@@ -1,6 +1,6 @@
 # TQQQ Bot Monthly Context
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 ## Current Decision
 
@@ -19,6 +19,7 @@ The selected high-risk/high-reward TQQQ rule set is:
 | Rule | Current Value |
 |---|---:|
 | TQQQ trailing stop | 25% from highest high since entry |
+| Fresh-entry guard | 10% below average cost for first 2 trading days |
 | Profit target | Sell all at +20% from average cost |
 | Re-buy pullback | Buy after -5% from profit/manual exit price |
 | Profit re-buy timeout | 15 trading days |
@@ -46,6 +47,7 @@ All buy/re-buy paths require `RSI14 <= 70`.
 
 While holding TQQQ, the bot can tell the user to sell all when:
 
+- TQQQ is within the first 2 trading days after entry and falls 10% below average cost.
 - TQQQ falls below the 25% trailing stop.
 - TQQQ crosses below SMA200.
 - TQQQ reaches +20% profit from average cost.
@@ -92,6 +94,17 @@ If broker cash or shares differ from the repo's tracked state, run the relevant 
 
 Then run `daily` to confirm the Telegram message shows the current TQQQ position and cash.
 
+## 2026-06-06 Fresh-Entry Improvement
+
+The June 5 drop showed that the normal 25% trailing stop is intentionally wide and does not protect a brand-new entry from a sharp immediate reversal. A narrow guard was added:
+
+- Active only during the first 2 trading days after a buy.
+- Stop level is 10% below average cost.
+- If hit, the bot sends a SELL action and resets to cash.
+- After that sell, it waits for the next normal TQQQ entry setup instead of immediately chasing back in.
+
+This is meant to catch failed new entries without replacing the long-term 25% trend stop.
+
 ## Bot-Only Benchmark
 
 The bot-only benchmark models what would happen if the user followed only the bot's TQQQ instructions.
@@ -112,6 +125,7 @@ The bot-only benchmark models what would happen if the user followed only the bo
 הכללים הפעילים:
 
 - טריילינג סטופ של 25% מהשיא מאז הכניסה.
+- הגנת כניסה חדשה: ביומיים הראשונים אחרי קנייה, אם TQQQ יורדת 10% מתחת למחיר הקנייה הממוצע, הבוט נותן הוראת מכירה.
 - מכירה מלאה ברווח של 20%.
 - כניסה מחדש אחרי ירידה של 5% ממחיר היציאה. אחרי מכירת רווח רגילה הטיימאאוט הוא 15 ימי מסחר; אחרי מכירה ידנית הטיימאאוט הוא 3 ימי מסחר.
 - כניסה מחדש רק אם RSI14 קטן או שווה ל-70.

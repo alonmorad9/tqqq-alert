@@ -1,6 +1,6 @@
 # TQQQ Research Handoff
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 ## Current Strategy
 
@@ -11,6 +11,7 @@ Current live rules:
 | Rule | Value |
 |---|---:|
 | TQQQ trailing stop | 25% |
+| Fresh-entry guard | 10% below average cost for first 2 trading days |
 | Profit target | +20%, sell all |
 | Re-buy pullback | -5% from exit price |
 | Re-buy timeout | 15 trading days |
@@ -27,6 +28,7 @@ The selected rule set came from the combined TQQQ strategy searches saved under 
 The best clean live rule family was:
 
 - 25% trailing stop.
+- Temporary 10% fresh-entry guard for the first 2 trading days after a buy.
 - +20% profit target.
 - -5% pullback re-entry.
 - 15 trading-day timeout after normal profit exits.
@@ -38,6 +40,8 @@ The best clean live rule family was:
 - Cash while waiting.
 
 This was selected because it was the strongest clean TQQQ-only setup among the tested practical variants while keeping the operational behavior simple.
+
+On 2026-06-06, a fresh-entry guard was added after the June 5 drawdown exposed a specific failure mode: a newly synced/manual buy can take a large immediate hit while the normal 25% trend stop is still far away. A quick historical check showed that a 10% guard for the first 1-2 trading days improved the saved full-history result in that test family, but it triggered very rarely. Treat it as a narrow failed-entry protection layer, not as a replacement for the main strategy.
 
 ## Free Breadth / Sector Leadership Test
 
@@ -67,6 +71,7 @@ Telegram reports should include:
 - Current TQQQ price and price source.
 - SMA200.
 - TQQQ trailing stop when a position is open.
+- Fresh-entry guard when it is active.
 - Re-entry RSI.
 - Cash.
 - TQQQ position value.

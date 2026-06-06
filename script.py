@@ -18,6 +18,8 @@ STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
 TRAILING_STOP_PCT = 0.25
+FRESH_ENTRY_GUARD_PCT = 0.10
+FRESH_ENTRY_GUARD_DAYS = 2
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.05
 SWING_REBUY_TIMEOUT_DAYS = 15
@@ -577,6 +579,28 @@ def calculate_trailing_stop(highest_high):
     return round(float(highest_high) * (1 - TRAILING_STOP_PCT), 2)
 
 
+def calculate_fresh_entry_guard(position_open, avg_cost, entry_date, ticker, current_price):
+    if not position_open or not avg_cost or not entry_date:
+        return {
+            "active": False,
+            "hit": False,
+            "stop": None,
+            "days": None,
+            "days_limit": FRESH_ENTRY_GUARD_DAYS,
+        }
+
+    days_since_entry = trading_days_since(entry_date, ticker)
+    stop = round(float(avg_cost) * (1 - FRESH_ENTRY_GUARD_PCT), 2)
+    active = days_since_entry <= FRESH_ENTRY_GUARD_DAYS
+    return {
+        "active": active,
+        "hit": active and float(current_price) < stop,
+        "stop": stop,
+        "days": days_since_entry,
+        "days_limit": FRESH_ENTRY_GUARD_DAYS,
+    }
+
+
 def trading_days_since(date_text, ticker):
     if not date_text:
         return 0
@@ -804,10 +828,18 @@ def update_bot_strategy_benchmark(ticker):
             state_changed = True
 
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
+    fresh_entry_guard = calculate_fresh_entry_guard(
+        position_open,
+        avg_cost,
+        state.get("entry_date"),
+        ticker,
+        current_price,
+    )
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
+    hit_fresh_entry_guard = fresh_entry_guard["hit"]
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and AUTO_EARLY_WARNING_EXIT and early_warning["hit"]
     hit_profit_target = (
@@ -841,9 +873,14 @@ def update_bot_strategy_benchmark(ticker):
         crossed_above_sma or (not state.get("last_action") and above_sma)
     ) and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
 
-    if position_open and (hit_trailing_stop or crossed_below_sma):
+    if position_open and (hit_fresh_entry_guard or hit_trailing_stop or crossed_below_sma):
         cash += shares * current_price
-        action = "benchmark_sell_stop" if hit_trailing_stop else "benchmark_sell_sma200"
+        if hit_fresh_entry_guard:
+            action = "benchmark_sell_fresh_entry_guard"
+        elif hit_trailing_stop:
+            action = "benchmark_sell_stop"
+        else:
+            action = "benchmark_sell_sma200"
         state.update({
             "position_open": False,
             "shares": 0.0,
@@ -988,6 +1025,7 @@ def update_bot_strategy_benchmark(ticker):
         "waiting_for_early_reentry": waiting_for_early_reentry,
         "last_action": state.get("last_action"),
         "early_warning": early_warning,
+        "fresh_entry_guard": fresh_entry_guard,
         "reentry_rsi_ok": reentry_rsi_ok,
     }
 
@@ -1031,6 +1069,13 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             state["highest_high_since_entry"] = round(highest_high_since_entry, 4)
             state_dirty = True
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
+    fresh_entry_guard = calculate_fresh_entry_guard(
+        position_open,
+        avg_cost,
+        state.get("entry_date"),
+        ticker,
+        current_price,
+    )
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
     position_value = shares * current_price
@@ -1042,6 +1087,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     # ── SIGNAL DETECTION ──────────────────────────────────
     crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
     crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
+    hit_fresh_entry_guard = fresh_entry_guard["hit"]
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and AUTO_EARLY_WARNING_EXIT and early_warning["hit"]
     hit_profit_target = (
@@ -1105,7 +1151,33 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     action = None
     instruction_lines = []
 
-    if position_open and hit_trailing_stop:
+    if position_open and hit_fresh_entry_guard:
+        sell_shares = shares
+        cash += sell_shares * current_price
+        shares = 0.0
+        state.update({
+            "position_open": False,
+            "shares": shares,
+            "cash": round(cash, 2),
+            "avg_cost": None,
+            "entry_date": None,
+            "highest_high_since_entry": None,
+            "waiting_for_pullback": False,
+            **clear_early_exit_fields(),
+            "last_profit_sell_price": None,
+            "profit_exit_date": None,
+            **clear_manual_exit_fields(),
+            "last_action": "sell_all_fresh_entry_guard",
+        })
+        state_changed = True
+        action = "🚨 SELL NOW — FRESH ENTRY GUARD HIT"
+        instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
+        instruction_lines.append(
+            f"Reason: the position is in its first {FRESH_ENTRY_GUARD_DAYS} trading days "
+            f"and price is below the {FRESH_ENTRY_GUARD_PCT * 100:.0f}% fresh-entry guard."
+        )
+        instruction_lines.append("After selling, wait in cash until the next TQQQ entry signal.")
+    elif position_open and hit_trailing_stop:
         sell_shares = shares
         cash += sell_shares * current_price
         shares = 0.0
@@ -1324,6 +1396,13 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
     highest_high_since_entry = state.get("highest_high_since_entry")
     trailing_stop = calculate_trailing_stop(highest_high_since_entry)
+    fresh_entry_guard = calculate_fresh_entry_guard(
+        position_open,
+        avg_cost,
+        state.get("entry_date"),
+        ticker,
+        current_price,
+    )
     position_value = shares * current_price
     cost_basis = shares * avg_cost
     total_value = cash + position_value
@@ -1367,7 +1446,13 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     ]
     if bot_strategy["position_open"]:
         benchmark_lines.append(f"Next Profit:   ${benchmark_next_profit_target:.2f} (+{SWING_PROFIT_TARGET_PCT * 100:.0f}%)")
-        benchmark_lines.append("Rule now: benchmark is holding TQQQ until profit target, parabolic exit, SMA200 exit, or trailing stop.")
+        benchmark_guard = bot_strategy.get("fresh_entry_guard") or {}
+        if benchmark_guard.get("active") and benchmark_guard.get("stop") is not None:
+            benchmark_lines.append(
+                f"Fresh Guard:   ${benchmark_guard['stop']:.2f} "
+                f"({benchmark_guard['days']}/{benchmark_guard['days_limit']} days)"
+            )
+        benchmark_lines.append("Rule now: benchmark is holding TQQQ until fresh-entry guard, profit target, parabolic exit, SMA200 exit, or trailing stop.")
     elif bot_strategy.get("waiting_for_pullback"):
         benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
         benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
@@ -1411,6 +1496,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🏔️ High Since Entry: ${float(highest_high_since_entry):.2f}")
         else:
             lines.append("🛑 Trail Stop:   Not active")
+        if fresh_entry_guard["active"] and fresh_entry_guard["stop"] is not None:
+            lines.append(
+                f"🧷 Fresh Entry Guard: ${fresh_entry_guard['stop']:.2f}  "
+                f"({fresh_entry_guard['days']}/{fresh_entry_guard['days_limit']} trading days)"
+            )
+            lines.append(
+                f"   Meaning: temporary {FRESH_ENTRY_GUARD_PCT * 100:.0f}% protection for new entries; "
+                "if hit, Action becomes SELL."
+            )
         if next_profit_target:
             next_profit_pct = int(round(SWING_PROFIT_TARGET_PCT * 100))
             lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}  (+{next_profit_pct}% target)")
@@ -1484,6 +1578,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         ]
         if trailing_stop is not None:
             lines.append(f"🛑 Trail Stop: ${trailing_stop:.2f}")
+        if fresh_entry_guard["active"] and fresh_entry_guard["stop"] is not None:
+            lines.append(
+                f"🧷 Fresh Guard: ${fresh_entry_guard['stop']:.2f} "
+                f"({fresh_entry_guard['days']}/{fresh_entry_guard['days_limit']} days)"
+            )
         if next_profit_target:
             lines.append(f"🎯 Next Profit: ${next_profit_target:.2f}")
         if rebuy_target:

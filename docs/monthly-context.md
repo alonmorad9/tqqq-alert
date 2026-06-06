@@ -101,10 +101,10 @@ The June 5 drop showed that the normal 25% trailing stop is intentionally wide a
 - Active only during the first 2 trading days after a buy.
 - Stop level is 10% below average cost.
 - If hit, the bot sends a SELL action and resets to cash.
-- After that sell, it waits for the normal pullback/timeout re-entry flow instead of immediately chasing back in. The re-buy anchor is the fresh-entry guard sell price.
+- After that sell, it waits in cash for the rest of the same trading day instead of immediately chasing back in. On the next trading day, normal fresh-entry logic can work again if trend and RSI allow it.
 - Buy and manual-buy messages show the guard price so the user can also set a broker stop or TradingView price alert immediately after entering.
 
-Recent intraday check: using the free March-June 2026 5-minute Yahoo window, the baseline 10-minute simulation re-bought 10 minutes after a June 5 fresh-entry guard sell. Treating that guard sell as a pullback-wait state avoided the same-day loop and improved that short recent window from `1.2638x` to `1.2780x`.
+Recent intraday check: using the free March-June 2026 5-minute Yahoo window, the baseline 10-minute simulation re-bought 10 minutes after a June 5 fresh-entry guard sell. A same-day cooldown avoided that loop and improved that short recent window from `1.2638x` to `1.2780x`. The full daily backtest favored this cooldown approach over a longer pullback-wait after guard sells, because the longer wait hurt compounding.
 
 This is meant to catch failed new entries without replacing the long-term 25% trend stop.
 

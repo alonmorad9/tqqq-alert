@@ -43,7 +43,7 @@ This was selected because it was the strongest clean TQQQ-only setup among the t
 
 On 2026-06-06, a fresh-entry guard was added after the June 5 drawdown exposed a specific failure mode: a newly synced/manual buy can take a large immediate hit while the normal 25% trend stop is still far away. A quick historical check showed that a 10% guard for the first 1-2 trading days improved the saved full-history result in that test family, but it triggered very rarely. Treat it as a narrow failed-entry protection layer, not as a replacement for the main strategy. Buy and manual-buy messages should show this guard price so the user can also set a broker stop or TradingView price alert immediately.
 
-Follow-up intraday check: the free March-June 2026 5-minute Yahoo window showed that a 10-minute bot can otherwise sell on the fresh-entry guard and re-buy almost immediately while price is still above SMA200. Fresh-entry guard exits now enter the normal pullback/timeout re-entry flow, anchored to the guard sell price. In that recent window, the guard-wait variant ended at `1.2780x` vs `1.2638x` for the immediate-rebuy baseline.
+Follow-up intraday check: the free March-June 2026 5-minute Yahoo window showed that a 10-minute bot can otherwise sell on the fresh-entry guard and re-buy almost immediately while price is still above SMA200. Fresh-entry guard exits now create a same-day cooldown only. In that recent window, the cooldown variant ended at `1.2780x` vs `1.2638x` for the immediate-rebuy baseline. A full-history daily check favored same-day cooldown over a longer pullback-wait after guard sells, because the longer wait reduced the main strategy from `738.5x` to `530.0x`.
 
 ## Free Breadth / Sector Leadership Test
 

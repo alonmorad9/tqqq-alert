@@ -245,6 +245,7 @@ def default_state():
         **clear_early_exit_fields(),
         "last_profit_sell_price": None,
         "profit_exit_date": None,
+        "fresh_entry_guard_exit_date": None,
         "manual_exit_mode": False,
         "manual_exit_price": None,
         "manual_exit_date": None,
@@ -626,6 +627,12 @@ def clear_early_exit_fields():
     }
 
 
+def clear_fresh_entry_guard_exit_fields():
+    return {
+        "fresh_entry_guard_exit_date": None,
+    }
+
+
 def calculate_early_warning(ticker):
     row = ticker.iloc[-1]
     prev = ticker.iloc[-2]
@@ -869,27 +876,25 @@ def update_bot_strategy_benchmark(ticker):
         and current_price > float(ticker["SMA20"].iloc[-1])
         and reentry_rsi_ok
     )
+    fresh_guard_cooldown = (
+        state.get("last_action") == "benchmark_sell_fresh_entry_guard"
+        and state.get("fresh_entry_guard_exit_date") == current_date
+    )
     hit_fresh_buy_signal = (
         crossed_above_sma or (not state.get("last_action") and above_sma)
-    ) and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
+    ) and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
 
     if position_open and (hit_fresh_entry_guard or hit_trailing_stop or crossed_below_sma):
         cash += shares * current_price
         if hit_fresh_entry_guard:
             action = "benchmark_sell_fresh_entry_guard"
-            wait_for_pullback = True
-            last_exit_price = round(current_price, 4)
-            exit_date = current_date
+            cooldown_date = current_date
         elif hit_trailing_stop:
             action = "benchmark_sell_stop"
-            wait_for_pullback = False
-            last_exit_price = None
-            exit_date = None
+            cooldown_date = None
         else:
             action = "benchmark_sell_sma200"
-            wait_for_pullback = False
-            last_exit_price = None
-            exit_date = None
+            cooldown_date = None
         state.update({
             "position_open": False,
             "shares": 0.0,
@@ -897,12 +902,13 @@ def update_bot_strategy_benchmark(ticker):
             "avg_cost": None,
             "entry_date": None,
             "highest_high_since_entry": None,
-            "waiting_for_pullback": wait_for_pullback,
+            "waiting_for_pullback": False,
             "waiting_for_early_reentry": False,
             "early_exit_price": None,
             "early_exit_date": None,
-            "last_profit_sell_price": last_exit_price,
-            "profit_exit_date": exit_date,
+            "last_profit_sell_price": None,
+            "profit_exit_date": None,
+            "fresh_entry_guard_exit_date": cooldown_date,
             "last_action": action,
         })
         state_changed = True
@@ -922,6 +928,7 @@ def update_bot_strategy_benchmark(ticker):
             "early_exit_date": None,
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": current_date,
+            **clear_fresh_entry_guard_exit_fields(),
             "last_action": action,
         })
         state_changed = True
@@ -941,6 +948,7 @@ def update_bot_strategy_benchmark(ticker):
             "waiting_for_early_reentry": True,
             "early_exit_price": round(current_price, 4),
             "early_exit_date": current_date,
+            **clear_fresh_entry_guard_exit_fields(),
             "last_action": action,
         })
         state_changed = True
@@ -960,6 +968,7 @@ def update_bot_strategy_benchmark(ticker):
             "early_exit_date": None,
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": current_date,
+            **clear_fresh_entry_guard_exit_fields(),
             "last_action": action,
         })
         state_changed = True
@@ -987,6 +996,7 @@ def update_bot_strategy_benchmark(ticker):
                 "early_exit_date": None,
                 "last_profit_sell_price": None,
                 "profit_exit_date": None,
+                **clear_fresh_entry_guard_exit_fields(),
                 "last_action": action,
             })
             state_changed = True
@@ -1011,8 +1021,8 @@ def update_bot_strategy_benchmark(ticker):
         benchmark_status = "In TQQQ"
     elif waiting_for_early_reentry:
         benchmark_status = "Waiting for early-risk recovery"
-    elif waiting_for_pullback and state.get("last_action") == "benchmark_sell_fresh_entry_guard":
-        benchmark_status = "Waiting after fresh-entry guard"
+    elif state.get("last_action") == "benchmark_sell_fresh_entry_guard" and state.get("fresh_entry_guard_exit_date") == current_date:
+        benchmark_status = "Same-day cooldown after fresh-entry guard"
     elif waiting_for_pullback:
         benchmark_status = "Waiting for swing re-entry"
     else:
@@ -1035,6 +1045,7 @@ def update_bot_strategy_benchmark(ticker):
         "waiting_for_pullback": waiting_for_pullback,
         "waiting_for_early_reentry": waiting_for_early_reentry,
         "last_action": state.get("last_action"),
+        "fresh_entry_guard_exit_date": state.get("fresh_entry_guard_exit_date"),
         "early_warning": early_warning,
         "fresh_entry_guard": fresh_entry_guard,
         "reentry_rsi_ok": reentry_rsi_ok,
@@ -1143,9 +1154,14 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         and current_price > float(ticker["SMA20"].iloc[-1])
         and reentry_rsi_ok
     )
+    current_date = ticker.index[-1].strftime("%Y-%m-%d")
+    fresh_guard_cooldown = (
+        state.get("last_action") == "sell_all_fresh_entry_guard"
+        and state.get("fresh_entry_guard_exit_date") == current_date
+    )
     hit_fresh_buy_signal = (
         crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
-    ) and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode and reentry_rsi_ok
+    ) and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode and reentry_rsi_ok
 
     raw_reentry_trigger = (
         ((hit_rebuy_pullback or hit_rebuy_timeout) and above_sma)
@@ -1153,6 +1169,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         or (waiting_for_early_reentry and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
         or (
             (crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1])))
+            and not fresh_guard_cooldown
             and not waiting_for_pullback
             and not waiting_for_early_reentry
             and not manual_exit_mode
@@ -1173,10 +1190,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "avg_cost": None,
             "entry_date": None,
             "highest_high_since_entry": None,
-            "waiting_for_pullback": True,
+            "waiting_for_pullback": False,
             **clear_early_exit_fields(),
-            "last_profit_sell_price": round(current_price, 4),
-            "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
+            "last_profit_sell_price": None,
+            "profit_exit_date": None,
+            "fresh_entry_guard_exit_date": current_date,
             **clear_manual_exit_fields(),
             "last_action": "sell_all_fresh_entry_guard",
         })
@@ -1187,9 +1205,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"Reason: the position is in its first {FRESH_ENTRY_GUARD_DAYS} trading days "
             f"and price is below the {FRESH_ENTRY_GUARD_PCT * 100:.0f}% fresh-entry guard."
         )
-        rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
-        instruction_lines.append("After selling, wait in cash. Do not immediately re-buy the same dip.")
-        instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
+        instruction_lines.append("After selling, wait in cash for the rest of this trading day.")
+        instruction_lines.append("Reason: this prevents an immediate 10-minute re-buy loop after a failed fresh entry.")
     elif position_open and hit_trailing_stop:
         sell_shares = shares
         cash += sell_shares * current_price
@@ -1205,6 +1222,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             **clear_early_exit_fields(),
             "last_profit_sell_price": None,
             "profit_exit_date": None,
+            **clear_fresh_entry_guard_exit_fields(),
             **clear_manual_exit_fields(),
             "last_action": "sell_all_trailing_stop",
         })
@@ -1227,6 +1245,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             **clear_early_exit_fields(),
             "last_profit_sell_price": None,
             "profit_exit_date": None,
+            **clear_fresh_entry_guard_exit_fields(),
             **clear_manual_exit_fields(),
             "last_action": "sell_all_sma200",
         })
@@ -1250,6 +1269,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             **clear_early_exit_fields(),
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
+            **clear_fresh_entry_guard_exit_fields(),
             **clear_manual_exit_fields(),
             "last_action": f"swing_profit_exit_{target_pct}",
         })
@@ -1276,6 +1296,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "waiting_for_early_reentry": True,
             "early_exit_price": round(current_price, 4),
             "early_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
+            **clear_fresh_entry_guard_exit_fields(),
             **clear_manual_exit_fields(),
             "last_action": "sell_all_early_warning",
         })
@@ -1300,6 +1321,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             **clear_early_exit_fields(),
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
+            **clear_fresh_entry_guard_exit_fields(),
             **clear_manual_exit_fields(),
             "last_action": "parabolic_profit_exit",
         })
@@ -1347,6 +1369,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 **clear_early_exit_fields(),
                 "last_profit_sell_price": None,
                 "profit_exit_date": None,
+                **clear_fresh_entry_guard_exit_fields(),
                 **clear_manual_exit_fields(),
                 "last_action": buy_reason,
             })
@@ -1434,16 +1457,23 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     next_profit_target = avg_cost * (1 + SWING_PROFIT_TARGET_PCT) if position_open and avg_cost else None
     rebuy_target = last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT) if waiting_for_pullback and last_profit_sell_price else None
     manual_rebuy_target = manual_exit_price * (1 - SWING_REBUY_DROP_PCT) if manual_exit_mode and manual_exit_price else None
-    benchmark_waiting_after_guard = bot_strategy.get("last_action") == "benchmark_sell_fresh_entry_guard"
-    waiting_after_guard = state.get("last_action") == "sell_all_fresh_entry_guard"
+    report_date = ticker.index[-1].strftime("%Y-%m-%d")
+    benchmark_guard_cooldown = (
+        bot_strategy.get("last_action") == "benchmark_sell_fresh_entry_guard"
+        and bot_strategy.get("fresh_entry_guard_exit_date") == report_date
+    )
+    fresh_guard_cooldown = (
+        state.get("last_action") == "sell_all_fresh_entry_guard"
+        and state.get("fresh_entry_guard_exit_date") == report_date
+    )
     if position_open:
         position_status = "In position"
     elif manual_exit_mode:
         position_status = "Manual safety mode"
     elif waiting_for_early_reentry:
         position_status = "Waiting for early-risk recovery"
-    elif waiting_for_pullback and waiting_after_guard:
-        position_status = "Waiting after fresh-entry guard"
+    elif fresh_guard_cooldown:
+        position_status = "Same-day cooldown after fresh-entry guard"
     elif waiting_for_pullback:
         position_status = "Waiting for swing re-entry"
     else:
@@ -1476,17 +1506,16 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             )
         benchmark_lines.append("Rule now: benchmark is holding TQQQ until fresh-entry guard, profit target, parabolic exit, SMA200 exit, or trailing stop.")
     elif bot_strategy.get("waiting_for_pullback"):
-        sell_label = "fresh-entry guard sell" if benchmark_waiting_after_guard else "benchmark sell"
-        benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from {sell_label})")
+        benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
         benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
         benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
-        if benchmark_waiting_after_guard:
-            benchmark_lines.append("Rule now: benchmark avoids immediate re-buy after a failed fresh entry; it waits for pullback or timeout, with RSI ready.")
-        else:
-            benchmark_lines.append("Rule now: benchmark waits for pullback or timeout, and still needs RSI to be ready.")
+        benchmark_lines.append("Rule now: benchmark waits for pullback or timeout, and still needs RSI to be ready.")
     elif bot_strategy.get("waiting_for_early_reentry"):
         benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
         benchmark_lines.append("Rule now: benchmark waits for recovery above SMA200 and SMA20, with RSI ready.")
+    elif benchmark_guard_cooldown:
+        benchmark_lines.append("Rule now: benchmark waits in cash for the rest of this trading day after a failed fresh entry.")
+        benchmark_lines.append("Tomorrow, it can use the normal fresh-entry logic again if trend and RSI allow it.")
     else:
         benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
         benchmark_lines.append("Rule now: benchmark waits for a fresh TQQQ entry signal.")
@@ -1535,9 +1564,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             next_profit_pct = int(round(SWING_PROFIT_TARGET_PCT * 100))
             lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}  (+{next_profit_pct}% target)")
         if rebuy_target:
-            rebuy_label = "fresh-entry guard sell" if waiting_after_guard else "profit exit"
-            lines.append(f"🔁 Re-buy:       ${rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from {rebuy_label})")
+            lines.append(f"🔁 Re-buy:       ${rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from profit exit)")
             lines.append(f"⏳ Wait Days:    {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS} trading days")
+        if fresh_guard_cooldown:
+            lines.append("🧷 Guard Cooldown: active for today only")
+            lines.append("   Meaning: the bot sold a failed fresh entry and will not immediately re-buy on the next 10-minute check.")
         if manual_rebuy_target:
             lines.append(f"🧯 Manual Re-buy: ${manual_rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from manual exit)")
             lines.append(f"⏳ Manual Wait:  {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS} trading days")
@@ -1693,6 +1724,7 @@ def mark_manual_sold():
         "waiting_for_pullback": False,
         "last_profit_sell_price": None,
         "profit_exit_date": None,
+        **clear_fresh_entry_guard_exit_fields(),
         "manual_exit_mode": True,
         "manual_exit_price": round(manual_price, 4),
         "manual_exit_date": datetime.now(UTC).date().isoformat(),
@@ -1752,6 +1784,7 @@ def mark_manual_bought():
         "early_exit_date": None,
         "last_profit_sell_price": None,
         "profit_exit_date": None,
+        **clear_fresh_entry_guard_exit_fields(),
         "manual_exit_mode": False,
         "manual_exit_price": None,
         "manual_exit_date": None,
@@ -1788,6 +1821,12 @@ def mark_manual_cash_set():
         "cash": round(amount, 2),
         "entry_date": None,
         "highest_high_since_entry": None,
+        "waiting_for_pullback": False,
+        **clear_early_exit_fields(),
+        "last_profit_sell_price": None,
+        "profit_exit_date": None,
+        **clear_fresh_entry_guard_exit_fields(),
+        **clear_manual_exit_fields(),
         "last_action": "manual_cash_set",
     })
     save_state(state)
@@ -1798,7 +1837,7 @@ def mark_manual_cash_set():
         f"Tracked cash: ${amount:.2f}",
         "─" * 30,
         "The TQQQ bot will wait in cash until the next TQQQ buy/re-buy signal.",
-        "Manual safety mode and re-entry rules remain unchanged.",
+        "Manual safety mode is cleared because this is a clean cash sync.",
     ]
     send_telegram("\n".join(lines))
     print(f"[MANUAL CASH SET] Cash: {amount:.2f}")

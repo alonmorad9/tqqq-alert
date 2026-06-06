@@ -36,6 +36,7 @@ REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
 EARLY_CLOSE = time(13, 0)
 MAX_LIVE_PRICE_AGE = timedelta(minutes=30)
+ENTRY_OPEN_DELAY_MINUTES = 30
 
 
 def observed_fixed_holiday(year, month, day):
@@ -222,6 +223,24 @@ def is_market_open(now_utc):
         return True, "NASDAQ trading hours"
 
     return False, "outside NASDAQ trading hours"
+
+
+def entry_open_delay_ready(now_utc=None):
+    now_utc = now_utc or datetime.now(UTC)
+    session = get_market_session(now_utc.astimezone(MARKET_TZ).date())
+    if session is None:
+        return True, "market closed"
+
+    market_open, market_close = session
+    if not market_open <= now_utc <= market_close:
+        return True, "outside market hours"
+
+    minutes_since_open = int((now_utc - market_open).total_seconds() // 60)
+    if minutes_since_open < ENTRY_OPEN_DELAY_MINUTES:
+        wait_left = ENTRY_OPEN_DELAY_MINUTES - minutes_since_open
+        return False, f"first {ENTRY_OPEN_DELAY_MINUTES} minutes after open; wait about {wait_left} minutes"
+
+    return True, "open-delay cleared"
 
 
 def should_send_daily_report(mode, intended_utc=None):
@@ -869,12 +888,15 @@ def update_bot_strategy_benchmark(ticker):
         and current_price <= last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT)
     )
     hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
-    hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok
+    entry_open_delay_ok, entry_open_delay_reason = entry_open_delay_ready()
+    raw_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok
+    hit_rebuy_signal = raw_rebuy_signal and entry_open_delay_ok
     hit_early_reentry_signal = (
         waiting_for_early_reentry
         and current_price > sma200
         and current_price > float(ticker["SMA20"].iloc[-1])
         and reentry_rsi_ok
+        and entry_open_delay_ok
     )
     fresh_guard_cooldown = (
         state.get("last_action") == "benchmark_sell_fresh_entry_guard"
@@ -882,7 +904,7 @@ def update_bot_strategy_benchmark(ticker):
     )
     hit_fresh_buy_signal = (
         crossed_above_sma or (not state.get("last_action") and above_sma)
-    ) and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
+    ) and entry_open_delay_ok and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
 
     if position_open and (hit_fresh_entry_guard or hit_trailing_stop or crossed_below_sma):
         cash += shares * current_price
@@ -1049,6 +1071,8 @@ def update_bot_strategy_benchmark(ticker):
         "early_warning": early_warning,
         "fresh_entry_guard": fresh_entry_guard,
         "reentry_rsi_ok": reentry_rsi_ok,
+        "entry_open_delay_ok": entry_open_delay_ok,
+        "entry_open_delay_reason": entry_open_delay_reason,
     }
 
 
@@ -1137,7 +1161,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         and current_price <= last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT)
     )
     hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
-    hit_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok
+    entry_open_delay_ok, entry_open_delay_reason = entry_open_delay_ready()
+    raw_swing_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok
+    hit_rebuy_signal = raw_swing_rebuy_signal and entry_open_delay_ok
     hit_manual_rebuy_pullback = (
         manual_exit_mode
         and manual_exit_price is not None
@@ -1147,12 +1173,13 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     hit_manual_rebuy_timeout = manual_exit_mode and manual_wait_days >= MANUAL_REBUY_TIMEOUT_DAYS and above_sma
     hit_manual_rebuy_signal = (
         hit_manual_rebuy_pullback or hit_manual_rebuy_reset or hit_manual_rebuy_timeout
-    ) and above_sma and reentry_rsi_ok
+    ) and above_sma and reentry_rsi_ok and entry_open_delay_ok
     hit_early_reentry_signal = (
         waiting_for_early_reentry
         and current_price > sma200
         and current_price > float(ticker["SMA20"].iloc[-1])
         and reentry_rsi_ok
+        and entry_open_delay_ok
     )
     current_date = ticker.index[-1].strftime("%Y-%m-%d")
     fresh_guard_cooldown = (
@@ -1161,7 +1188,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     )
     hit_fresh_buy_signal = (
         crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
-    ) and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode and reentry_rsi_ok
+    ) and entry_open_delay_ok and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode and reentry_rsi_ok
 
     raw_reentry_trigger = (
         ((hit_rebuy_pullback or hit_rebuy_timeout) and above_sma)
@@ -1400,6 +1427,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         action = "✅ HOLD — Above SMA200, stop intact"
     elif raw_reentry_trigger and not reentry_rsi_ok:
         action = f"⏳ WAIT — Re-entry blocked until RSI <= {REENTRY_RSI_MAX}"
+    elif raw_reentry_trigger and not entry_open_delay_ok:
+        action = "⏳ WAIT — Entry delayed after market open"
+        instruction_lines.append(
+            f"Reason: {entry_open_delay_reason}. This avoids buying into unstable opening moves."
+        )
     elif waiting_for_pullback:
         action = "⏳ WAIT — Waiting for pullback or timeout re-entry"
     elif waiting_for_early_reentry:
@@ -1486,6 +1518,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     benchmark_next_profit_target = bot_strategy.get("next_profit_target")
     benchmark_wait_days = int(bot_strategy.get("pullback_wait_days") or 0)
     benchmark_rsi_status = "ready" if bot_strategy.get("reentry_rsi_ok") else "too hot"
+    benchmark_open_delay_status = "ready" if bot_strategy.get("entry_open_delay_ok", True) else "waiting"
     benchmark_last_action = bot_strategy.get("last_action") or bot_strategy.get("action")
     benchmark_lines = [
         "🧪 Bot-Only Benchmark",
@@ -1509,6 +1542,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
         benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
         benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
+        benchmark_lines.append(f"Open Delay:    {benchmark_open_delay_status} — no bot buys in first {ENTRY_OPEN_DELAY_MINUTES} market minutes.")
         benchmark_lines.append("Rule now: benchmark waits for pullback or timeout, and still needs RSI to be ready.")
     elif bot_strategy.get("waiting_for_early_reentry"):
         benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
@@ -1566,12 +1600,14 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         if rebuy_target:
             lines.append(f"🔁 Re-buy:       ${rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from profit exit)")
             lines.append(f"⏳ Wait Days:    {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS} trading days")
+            lines.append(f"🌅 Open Delay:   no bot buys in first {ENTRY_OPEN_DELAY_MINUTES} market minutes")
         if fresh_guard_cooldown:
             lines.append("🧷 Guard Cooldown: active for today only")
             lines.append("   Meaning: the bot sold a failed fresh entry and will not immediately re-buy on the next 10-minute check.")
         if manual_rebuy_target:
             lines.append(f"🧯 Manual Re-buy: ${manual_rebuy_target:.2f}  (-{SWING_REBUY_DROP_PCT * 100:.1f}% from manual exit)")
             lines.append(f"⏳ Manual Wait:  {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS} trading days")
+            lines.append(f"🌅 Open Delay:   no bot buys in first {ENTRY_OPEN_DELAY_MINUTES} market minutes")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset:    {reset_status}")
             lines.append(

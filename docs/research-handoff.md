@@ -45,6 +45,8 @@ On 2026-06-06, a fresh-entry guard was added after the June 5 drawdown exposed a
 
 Follow-up intraday check: the free March-June 2026 5-minute Yahoo window showed that a 10-minute bot can otherwise sell on the fresh-entry guard and re-buy almost immediately while price is still above SMA200. Fresh-entry guard exits now create a same-day cooldown only. In that recent window, the cooldown variant ended at `1.2780x` vs `1.2638x` for the immediate-rebuy baseline. A full-history daily check favored same-day cooldown over a longer pullback-wait after guard sells, because the longer wait reduced the main strategy from `738.5x` to `530.0x`.
 
+Additional June 5 intraday check: the bot's harmful action was buying right at the 09:30 New York open after a pullback target was hit. On the free March-June 2026 5-minute window, delaying re-buys until 10:00 New York improved the recent run from `1.2780x` to `1.3063x`; delaying all bot-generated buys until 10:00 New York improved it to `1.3136x`. Production now blocks all bot buy signals during the first 30 market minutes. Treat this as an execution-quality guard based on limited recent intraday data, not a long-history optimized signal.
+
 ## Free Breadth / Sector Leadership Test
 
 On 2026-05-24, tested free sector-leadership ideas using the local historical export with TQQQ, QQQ, VIX, and XLK.

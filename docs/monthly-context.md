@@ -108,6 +108,16 @@ Recent intraday check: using the free March-June 2026 5-minute Yahoo window, the
 
 This is meant to catch failed new entries without replacing the long-term 25% trend stop.
 
+## 2026-06-06 Intraday Entry Open Delay
+
+The June 5 move also showed a second issue: the bot can re-buy at the market open as soon as a pullback target is hit, before the first 30 minutes reveal whether the open is stable or collapsing. A recent 5-minute intraday sanity check showed:
+
+- Baseline 10-minute behavior with same-day guard cooldown: `1.2780x`.
+- No re-buys before 10:00 New York time: `1.3063x`.
+- No bot buys at all before 10:00 New York time: `1.3136x`.
+
+Production choice: delay all bot-generated buy signals for the first 30 market minutes. This is an execution-quality guard based on limited recent intraday data; the long full-history daily backtest cannot validate intraday timing.
+
 ## Bot-Only Benchmark
 
 The bot-only benchmark models what would happen if the user followed only the bot's TQQQ instructions.

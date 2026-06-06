@@ -102,6 +102,7 @@ The June 5 drop showed that the normal 25% trailing stop is intentionally wide a
 - Stop level is 10% below average cost.
 - If hit, the bot sends a SELL action and resets to cash.
 - After that sell, it waits for the next normal TQQQ entry setup instead of immediately chasing back in.
+- Buy and manual-buy messages show the guard price so the user can also set a broker stop or TradingView price alert immediately after entering.
 
 This is meant to catch failed new entries without replacing the long-term 25% trend stop.
 

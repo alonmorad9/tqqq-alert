@@ -41,7 +41,7 @@ The best clean live rule family was:
 
 This was selected because it was the strongest clean TQQQ-only setup among the tested practical variants while keeping the operational behavior simple.
 
-On 2026-06-06, a fresh-entry guard was added after the June 5 drawdown exposed a specific failure mode: a newly synced/manual buy can take a large immediate hit while the normal 25% trend stop is still far away. A quick historical check showed that a 10% guard for the first 1-2 trading days improved the saved full-history result in that test family, but it triggered very rarely. Treat it as a narrow failed-entry protection layer, not as a replacement for the main strategy.
+On 2026-06-06, a fresh-entry guard was added after the June 5 drawdown exposed a specific failure mode: a newly synced/manual buy can take a large immediate hit while the normal 25% trend stop is still far away. A quick historical check showed that a 10% guard for the first 1-2 trading days improved the saved full-history result in that test family, but it triggered very rarely. Treat it as a narrow failed-entry protection layer, not as a replacement for the main strategy. Buy and manual-buy messages should show this guard price so the user can also set a broker stop or TradingView price alert immediately.
 
 ## Free Breadth / Sector Leadership Test
 

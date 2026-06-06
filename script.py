@@ -1340,6 +1340,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             state_changed = True
             instruction_lines.append(f"Buy with available cash: {money(buy_cash)}")
             instruction_lines.append(f"Estimated shares: {buy_shares:.4f}")
+            fresh_guard_stop = current_price * (1 - FRESH_ENTRY_GUARD_PCT)
+            instruction_lines.append(
+                f"Fresh-entry guard: set a broker/TradingView alert near ${fresh_guard_stop:.2f} "
+                f"for the first {FRESH_ENTRY_GUARD_DAYS} trading days."
+            )
         else:
             action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
             if hit_rebuy_pullback:
@@ -1734,6 +1739,7 @@ def mark_manual_bought():
     save_state(state)
 
     next_profit_target = manual_price * (1 + SWING_PROFIT_TARGET_PCT)
+    fresh_guard_stop = manual_price * (1 - FRESH_ENTRY_GUARD_PCT)
     lines = [
         "\U0001f7e2 Manual Buy Recorded",
         "\u2500" * 30,
@@ -1742,6 +1748,8 @@ def mark_manual_bought():
         f"Cash remaining: ${remaining_cash:.2f}",
         "\u2500" * 30,
         f"\U0001f3af Profit target: ${next_profit_target:.2f} (+{int(SWING_PROFIT_TARGET_PCT * 100)}%)",
+        f"\U0001f9f7 Fresh-entry guard: ${fresh_guard_stop:.2f} (-{FRESH_ENTRY_GUARD_PCT * 100:.0f}%) for first {FRESH_ENTRY_GUARD_DAYS} trading days.",
+        "Practical step: set this as a broker stop or TradingView price alert right after buying.",
         "Bot will now track position and send alerts normally.",
     ]
     send_telegram("\n".join(lines))

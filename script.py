@@ -556,19 +556,19 @@ def initialize_highest_high_since_entry(state, ticker):
         return None
 
     existing_high = state.get("highest_high_since_entry")
-    if existing_high is not None:
-        return float(existing_high)
-
     entry_date = state.get("entry_date")
     if not entry_date:
-        return float(ticker["High"].iloc[-1])
+        latest_high = float(ticker["High"].iloc[-1])
+        return max(float(existing_high or latest_high), latest_high)
 
     entry_day = datetime.fromisoformat(entry_date).date()
     highs_since_entry = ticker[ticker.index.map(date_only) >= entry_day]["High"]
     if highs_since_entry.empty:
-        return float(ticker["High"].iloc[-1])
+        latest_high = float(ticker["High"].iloc[-1])
+        return max(float(existing_high or latest_high), latest_high)
 
-    return float(highs_since_entry.max())
+    historical_high = float(highs_since_entry.max())
+    return max(float(existing_high or historical_high), historical_high)
 
 
 def calculate_trailing_stop(highest_high):

@@ -1,31 +1,33 @@
 # TQQQ Research Handoff
 
-Last updated: 2026-06-06
+Last updated: 2026-06-08
 
 ## Current Strategy
 
 The repo is intentionally **TQQQ-only**. Out-of-position capital is modeled as cash.
 
-Current live rules:
+Current live rules are the **practical protection** profile:
 
 | Rule | Value |
 |---|---:|
-| TQQQ trailing stop | 25% |
+| TQQQ trailing stop | 15% |
 | Fresh-entry guard | 10% below average cost for first 2 trading days |
 | Profit target | +20%, sell all |
 | Re-buy pullback | -5% from exit price |
-| Re-buy timeout | 15 trading days |
+| Re-buy timeout | 5 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI cap | RSI14 <= 70 |
+| Re-entry RSI cap | RSI14 <= 60 |
 | Parabolic exit | 5d >= 25% |
 | Waiting state | Cash |
-| Early-warning risk | Advisory only, no automatic sell |
+| Early-warning risk | Automatic sell at 3 of 5 warnings |
 
 ## Historical Research Summary
 
 The selected rule set came from the combined TQQQ strategy searches saved under `research/`.
 
-The best clean live rule family was:
+On 2026-06-08, the repo intentionally moved away from the prior max-revenue profile and into the practical-protection profile after the June 5 drop. The goal is now smaller losses and faster protection, not maximum historical compounding.
+
+The previous max-revenue live rule family was:
 
 - 25% trailing stop.
 - Temporary 10% fresh-entry guard for the first 2 trading days after a buy.
@@ -39,7 +41,30 @@ The best clean live rule family was:
 - The fast-drop combo `VIX 5d spike >= 25%` plus `RSI falling from 70+` is highlighted clearly as advisory guidance to consider manual stop tightening.
 - Cash while waiting.
 
-This was selected because it was the strongest clean TQQQ-only setup among the tested practical variants while keeping the operational behavior simple.
+That setup was the strongest clean TQQQ-only setup among the tested practical variants while keeping operational behavior simple, but it allowed too much damage during sharp fresh-entry weakness.
+
+The current practical-protection profile is:
+
+- 15% trailing stop.
+- Temporary 10% fresh-entry guard for the first 2 trading days after a buy.
+- +20% profit target.
+- -5% pullback re-entry.
+- 5 trading-day timeout after normal profit exits.
+- 3 trading-day timeout after manual safety sells.
+- RSI14 <= 60 re-entry guard.
+- Parabolic profit exit using the 5-day stretch.
+- Automatic early-warning sell when 3 of 5 weakness signs are active.
+- Cash while waiting.
+
+Backtest comparison through refreshed historical data ending 2026-06-08:
+
+- Previous/current-like max-revenue profile: `172.5x`, `37.1% CAGR`, `-41.9% max drawdown`.
+- Practical-protection profile: `25.4x`, `21.9% CAGR`, `-33.8% max drawdown`.
+
+Recent one-month simulation from the April 29 position through the June 5 close:
+
+- Current bot-like behavior: `$2,612.76`, `+4.9%`, `-16.4% max drawdown`.
+- Practical-protection behavior: `$2,791.96`, `+12.1%`, `-10.5% max drawdown`.
 
 On 2026-06-06, a fresh-entry guard was added after the June 5 drawdown exposed a specific failure mode: a newly synced/manual buy can take a large immediate hit while the normal 25% trend stop is still far away. A quick historical check showed that a 10% guard for the first 1-2 trading days improved the saved full-history result in that test family, but it triggered very rarely. Treat it as a narrow failed-entry protection layer, not as a replacement for the main strategy. Buy and manual-buy messages should show this guard price so the user can also set a broker stop or TradingView price alert immediately.
 
@@ -81,7 +106,7 @@ Telegram reports should include:
 - TQQQ position value.
 - Total tracked value.
 - Bot-only benchmark.
-- Risk context and early-drop risk explanations.
+- Risk context and early-drop risk explanations. Early-drop risk is now an active sell rule when it reaches 3 of 5 warnings.
 - A clear "Read first" line explaining that the `Action` is the instruction and the risk sections are context unless they created that action.
 
 Manual actions:

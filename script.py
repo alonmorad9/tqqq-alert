@@ -17,18 +17,18 @@ TICKER = "TQQQ"
 STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
-TRAILING_STOP_PCT = 0.25
+TRAILING_STOP_PCT = 0.15
 FRESH_ENTRY_GUARD_PCT = 0.10
 FRESH_ENTRY_GUARD_DAYS = 2
 SWING_PROFIT_TARGET_PCT = 0.20
 SWING_REBUY_DROP_PCT = 0.05
-SWING_REBUY_TIMEOUT_DAYS = 15
+SWING_REBUY_TIMEOUT_DAYS = 5
 MANUAL_REBUY_TIMEOUT_DAYS = 3
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
-AUTO_EARLY_WARNING_EXIT = False
-REENTRY_RSI_MAX = 70
+AUTO_EARLY_WARNING_EXIT = True
+REENTRY_RSI_MAX = 60
 PARABOLIC_RET5_WARNING_PCT = 0.25
 PARABOLIC_RET10_WARNING_PCT = None
 
@@ -773,9 +773,9 @@ def build_early_warning_lines(early_warning):
     else:
         fast_drop_note = "Not active — no combined fear spike + momentum rollover signal."
     return [
-        "🔮 Early Drop Warnings — advisory only",
-        "Meaning: faster weakness signals. They do NOT auto-sell because backtests showed too many false exits.",
-        "What to do: if warnings stack up, be more alert and consider manual stop tightening.",
+        "🔮 Early Drop Warnings — active sell rule",
+        f"Meaning: faster weakness signals. If {early_warning['threshold']}/5 warnings are active while you hold TQQQ, the bot can issue a SELL action.",
+        "What to do: treat a High level here as an actual protection trigger, not just background context.",
         f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active) — more active warnings means higher short-term drop risk.",
         f"Active:        {active}",
         f"Fast combo:    {fast_drop_note}",
@@ -1537,7 +1537,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 f"Fresh Guard:   ${benchmark_guard['stop']:.2f} "
                 f"({benchmark_guard['days']}/{benchmark_guard['days_limit']} days)"
             )
-        benchmark_lines.append("Rule now: benchmark is holding TQQQ until fresh-entry guard, profit target, parabolic exit, SMA200 exit, or trailing stop.")
+        benchmark_lines.append("Rule now: benchmark is holding TQQQ until fresh-entry guard, profit target, early-warning exit, parabolic exit, SMA200 exit, or trailing stop.")
     elif bot_strategy.get("waiting_for_pullback"):
         benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
         benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")

@@ -107,7 +107,7 @@ Manual actions:
 
 The user synced a manual broker TQQQ buy on 2026-06-04.
 
-Current inspected state on 2026-06-07:
+Current inspected state on 2026-06-08:
 
 - `position_open`: `true`
 - `shares`: `35.3032`
@@ -119,7 +119,7 @@ Current inspected state on 2026-06-07:
 - `manual_exit_mode`: `false`
 - `manual_exit_price`: `null`
 - `manual_exit_date`: `null`
-- `last_report_key`: `2026-06-05:close`
+- `last_report_key`: `2026-06-08:open`
 
 While this position is open, follow the active-position exit/risk rules. If the broker cash or shares differ from `position_state.json`, run the relevant manual sync action.
 

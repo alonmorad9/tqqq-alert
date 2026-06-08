@@ -14,45 +14,43 @@ The live repo is now **TQQQ-only**.
 
 ## Live Strategy
 
-The selected live TQQQ rule set is now the **practical protection** profile. It gives up some long-term upside versus the previous max-revenue profile, but tested better for reducing losses and handling sharp weakness like the June 5 drop.
+The selected live TQQQ rule set is now the **Best Calmar high-return** profile. It was chosen after comparing max-revenue, practical-protection, low-drawdown, and robustness tests. The goal is aggressive compounding with a better return/drawdown balance than the raw max-revenue winner.
 
 | Rule | Current Value |
 |---|---:|
-| TQQQ trailing stop | 15% from highest high since entry |
+| TQQQ trailing stop | 25% from highest high since entry |
 | Fresh-entry guard | 10% below average cost for first 2 trading days |
 | Profit target | Sell all at +20% from average cost |
-| Re-buy pullback | Buy after -5% from profit/manual exit price |
-| Profit re-buy timeout | 5 trading days |
+| Re-buy pullback | Buy after -7.5% from profit/manual exit price |
+| Profit re-buy timeout | 10 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI guard | RSI14 <= 60 |
-| Parabolic profit exit | 5-day return >= 25% |
+| Re-entry RSI guard | Off |
+| Parabolic profit exit | 5-day return >= 25% or 10-day return >= 30% |
 | Waiting asset | Cash only |
-| Early-warning risk | Automatic sell when 3 of 5 warnings are active |
+| Early-warning risk | Advisory only |
 
 ## Entry And Re-entry
 
 The bot can buy/re-buy TQQQ when one of the re-entry triggers is active and all required filters pass:
 
-- Profit pullback: price is at least 5% below the last profit-exit price.
-- Profit timeout: 5 trading days passed since the profit exit, trend is still above SMA200.
-- Manual pullback: price is at least 5% below the manual sell price.
+- Profit pullback: price is at least 7.5% below the last profit-exit price.
+- Profit timeout: 10 trading days passed since the profit exit, trend is still above SMA200.
+- Manual pullback: price is at least 7.5% below the manual sell price.
 - Manual timeout: 3 trading days passed since the manual sell, trend is still above SMA200.
 - SMA reset after manual sell: price first went below SMA200, then crossed back above it.
-- Early-risk recovery: used after an automatic early-warning sell; re-entry waits for recovery above SMA200 and SMA20 with RSI ready.
-- Fast-drop combo warning: `VIX 5d spike >= 25%` plus `RSI falling from 70+`. This is an important warning inside the active early-warning model.
+- Fast-drop combo warning: `VIX 5d spike >= 25%` plus `RSI falling from 70+`. This is an important advisory warning; it does not sell automatically in the current rule set.
 
-All buy/re-buy paths require `RSI14 <= 60`.
+The re-entry RSI gate is currently off.
 
 ## Exit Rules
 
 While holding TQQQ, the bot can tell the user to sell all when:
 
 - TQQQ is within the first 2 trading days after entry and falls 10% below average cost.
-- TQQQ falls below the 15% trailing stop.
+- TQQQ falls below the 25% trailing stop.
 - TQQQ crosses below SMA200.
 - TQQQ reaches +20% profit from average cost.
-- The parabolic 5-day stretch rule is hit while the position is profitable.
-- The early-warning model reaches 3 of 5 active warnings while a normal TQQQ position is open.
+- The parabolic 5-day or 10-day stretch rule is hit while the position is profitable.
 
 After any sell, the repo stays in cash and waits for the next TQQQ re-entry signal.
 
@@ -108,28 +106,34 @@ The June 5 drop showed that the normal 25% trailing stop is intentionally wide a
 
 Recent intraday check: using the free March-June 2026 5-minute Yahoo window, the baseline 10-minute simulation re-bought 10 minutes after a June 5 fresh-entry guard sell. A same-day cooldown avoided that loop and improved that short recent window from `1.2638x` to `1.2780x`. The full daily backtest favored this cooldown approach over a longer pullback-wait after guard sells, because the longer wait hurt compounding.
 
-This is meant to catch failed new entries without replacing the main 15% trend stop.
+This is meant to catch failed new entries without replacing the main 25% trend stop.
 
-## 2026-06-08 Practical Protection Switch
+## 2026-06-08 Best Calmar Strategy Switch
 
-After reviewing the one-month behavior from the first TQQQ buy through the June 5 drop, the repo was switched from the previous max-revenue profile to the practical-protection profile:
+After reviewing the one-month behavior from the first TQQQ buy through the June 5 drop, the repo first tested a practical-protection profile, then compared all combined rule families again. The selected production profile is now the Best Calmar high-return setup:
 
-- Trailing stop changed from 25% to 15%.
-- Profit re-buy timeout changed from 15 trading days to 5 trading days.
-- Re-entry RSI changed from 70 to 60.
-- Early-warning exits changed from advisory only to automatic when 3 of 5 warnings are active.
+- 25% trailing stop.
+- +20% profit target.
+- -7.5% pullback re-entry from the actual sell price.
+- 10 trading-day profit re-entry timeout.
+- RSI re-entry gate off.
+- Parabolic profit exit on 5-day >= 25% or 10-day >= 30%.
+- Early-warning section remains advisory only.
 
-Backtest comparison through refreshed historical data ending 2026-06-08:
+Combined-rule historical comparison:
 
-- Current/max-revenue-like profile: `172.5x`, `37.1% CAGR`, `-41.9% max drawdown`.
-- Practical-protection profile: `25.4x`, `21.9% CAGR`, `-33.8% max drawdown`.
+- Raw max-revenue winner: `374.8x`, `46.6% CAGR`, `-43.6% max drawdown`; likely too optimized and dependent on a tight 12% stop.
+- Best Calmar selected profile: `309.3x`, `44.8% CAGR`, `-37.3% max drawdown`, `61.3% win rate`.
+- Best <=35% drawdown profile: `166.3x`, `39.1% CAGR`, `-33.5% max drawdown`.
+- Current practical-protection profile before this switch: `20.4x`, `21.5% CAGR`, `-32.8% max drawdown`.
 
 Recent one-month simulation from the April 29 position through the June 5 close:
 
-- Current bot-like behavior: `$2,612.76`, `+4.9%`, `-16.4% max drawdown`.
-- Practical-protection behavior: `$2,791.96`, `+12.1%`, `-10.5% max drawdown`.
+- Best Calmar selected profile: `$2,811.41`, `+12.9%`, `-16.4% max drawdown`.
+- Practical-protection profile: `$2,791.96`, `+12.1%`, `-10.5% max drawdown`.
+- Raw max-revenue winner: `$2,821.45`, `+13.3%`, `-11.7% max drawdown`.
 
-The practical profile is not the maximum-return setup; it is the chosen safer setup after the June 5 damage showed that protection now matters more than pure compounding.
+The selected Best Calmar profile is the compromise: close to max-revenue historically, less fragile than the raw max winner, and much stronger than the very defensive practical-protection setup.
 
 ## 2026-06-06 Intraday Entry Open Delay
 
@@ -145,7 +149,7 @@ Production choice: delay all bot-generated buy signals for the first 30 market m
 
 The bot-only benchmark models what would happen if the user followed only the bot's TQQQ instructions.
 
-- It uses the same live practical-protection TQQQ-only rule set.
+- It uses the same live Best Calmar TQQQ-only rule set.
 - It stays in cash while out of TQQQ.
 - It does not include manual moves unless they are part of the modeled bot rules.
 
@@ -160,14 +164,14 @@ The bot-only benchmark models what would happen if the user followed only the bo
 
 הכללים הפעילים:
 
-- טריילינג סטופ של 15% מהשיא מאז הכניסה.
+- טריילינג סטופ של 25% מהשיא מאז הכניסה.
 - הגנת כניסה חדשה: ביומיים הראשונים אחרי קנייה, אם TQQQ יורדת 10% מתחת למחיר הקנייה הממוצע, הבוט נותן הוראת מכירה.
 - מכירה מלאה ברווח של 20%.
-- כניסה מחדש אחרי ירידה של 5% ממחיר היציאה. אחרי מכירת רווח רגילה הטיימאאוט הוא 5 ימי מסחר; אחרי מכירה ידנית הטיימאאוט הוא 3 ימי מסחר.
-- כניסה מחדש רק אם RSI14 קטן או שווה ל-60.
-- יציאת parabolic אם תשואת 5 ימים גדולה או שווה 25%.
-- אזהרות סיכון יכולות ליצור מכירה אוטומטית אם 3 מתוך 5 סימני חולשה פעילים.
-- אם מופיע שילוב מהיר של קפיצה ב-VIX ו-RSI יורד, זו אזהרה חשובה בתוך מודל ההגנה הפעיל.
+- כניסה מחדש אחרי ירידה של 7.5% ממחיר היציאה. אחרי מכירת רווח רגילה הטיימאאוט הוא 10 ימי מסחר; אחרי מכירה ידנית הטיימאאוט הוא 3 ימי מסחר.
+- אין חסימת RSI לכניסה מחדש.
+- יציאת parabolic אם תשואת 5 ימים גדולה או שווה 25% או תשואת 10 ימים גדולה או שווה 30%.
+- אזהרות סיכון הן מידע בלבד ולא מוכרות אוטומטית.
+- אם מופיע שילוב מהיר של קפיצה ב-VIX ו-RSI יורד, זו אזהרה חשובה לשקול הגנה ידנית.
 - בזמן המתנה: מזומן בלבד.
 
 מצב ידני:

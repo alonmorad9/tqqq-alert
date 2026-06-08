@@ -17,20 +17,20 @@ TICKER = "TQQQ"
 STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
-TRAILING_STOP_PCT = 0.15
+TRAILING_STOP_PCT = 0.25
 FRESH_ENTRY_GUARD_PCT = 0.10
 FRESH_ENTRY_GUARD_DAYS = 2
 SWING_PROFIT_TARGET_PCT = 0.20
-SWING_REBUY_DROP_PCT = 0.05
-SWING_REBUY_TIMEOUT_DAYS = 5
+SWING_REBUY_DROP_PCT = 0.075
+SWING_REBUY_TIMEOUT_DAYS = 10
 MANUAL_REBUY_TIMEOUT_DAYS = 3
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
-AUTO_EARLY_WARNING_EXIT = True
-REENTRY_RSI_MAX = 60
+AUTO_EARLY_WARNING_EXIT = False
+REENTRY_RSI_MAX = None
 PARABOLIC_RET5_WARNING_PCT = 0.25
-PARABOLIC_RET10_WARNING_PCT = None
+PARABOLIC_RET10_WARNING_PCT = 0.30
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -599,6 +599,25 @@ def calculate_trailing_stop(highest_high):
     return round(float(highest_high) * (1 - TRAILING_STOP_PCT), 2)
 
 
+def reentry_rsi_ready(current_rsi):
+    return REENTRY_RSI_MAX is None or float(current_rsi) <= REENTRY_RSI_MAX
+
+
+def format_reentry_rsi_status(current_rsi, is_ready=None):
+    if REENTRY_RSI_MAX is None:
+        return f"{current_rsi:.1f} / cap off (ready)"
+    if is_ready is None:
+        is_ready = reentry_rsi_ready(current_rsi)
+    status = "ready" if is_ready else "too hot"
+    return f"{current_rsi:.1f}/{REENTRY_RSI_MAX} max ({status})"
+
+
+def format_reentry_rsi_rule():
+    if REENTRY_RSI_MAX is None:
+        return "RSI gate is off"
+    return f"RSI <= {REENTRY_RSI_MAX}"
+
+
 def calculate_fresh_entry_guard(position_open, avg_cost, entry_date, ticker, current_price):
     if not position_open or not avg_cost or not entry_date:
         return {
@@ -772,10 +791,21 @@ def build_early_warning_lines(early_warning):
         fast_drop_note = "IMPORTANT WARNING ACTIVE — VIX fear is rising and RSI is rolling over. Do not ignore this; consider manually tightening your broker/TradingView stop."
     else:
         fast_drop_note = "Not active — no combined fear spike + momentum rollover signal."
+    mode = "active sell rule" if AUTO_EARLY_WARNING_EXIT else "advisory warning"
+    meaning = (
+        f"Meaning: faster weakness signals. If {early_warning['threshold']}/5 warnings are active while you hold TQQQ, the bot can issue a SELL action."
+        if AUTO_EARLY_WARNING_EXIT
+        else "Meaning: faster weakness signals. This section does not sell by itself in the current strategy; it helps you decide whether to tighten manual broker/TradingView protection."
+    )
+    action_note = (
+        "What to do: treat a High level here as an actual protection trigger, not just background context."
+        if AUTO_EARLY_WARNING_EXIT
+        else "What to do: if this reaches High, pay attention and consider manual protection, but follow the main Action line for bot instructions."
+    )
     return [
-        "🔮 Early Drop Warnings — active sell rule",
-        f"Meaning: faster weakness signals. If {early_warning['threshold']}/5 warnings are active while you hold TQQQ, the bot can issue a SELL action.",
-        "What to do: treat a High level here as an actual protection trigger, not just background context.",
+        f"🔮 Early Drop Warnings — {mode}",
+        meaning,
+        action_note,
         f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active) — more active warnings means higher short-term drop risk.",
         f"Active:        {active}",
         f"Fast combo:    {fast_drop_note}",
@@ -829,7 +859,7 @@ def update_bot_strategy_benchmark(ticker):
     prev_sma200 = float(ticker["SMA200"].iloc[-2])
     current_date = ticker.index[-1].strftime("%Y-%m-%d")
     current_rsi = float(ticker["RSI14"].iloc[-1])
-    reentry_rsi_ok = current_rsi <= REENTRY_RSI_MAX
+    reentry_rsi_ok = reentry_rsi_ready(current_rsi)
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
@@ -1085,7 +1115,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     current_high = float(ticker["High"].iloc[-1])
     sma200 = float(ticker["SMA200"].iloc[-1])
     current_rsi = float(ticker["RSI14"].iloc[-1])
-    reentry_rsi_ok = current_rsi <= REENTRY_RSI_MAX
+    reentry_rsi_ok = reentry_rsi_ready(current_rsi)
     prev_price = float(ticker["Close"].iloc[-2])
     prev_sma200 = float(ticker["SMA200"].iloc[-2])
 
@@ -1426,7 +1456,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     elif position_open and trailing_stop is not None and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
     elif raw_reentry_trigger and not reentry_rsi_ok:
-        action = f"⏳ WAIT — Re-entry blocked until RSI <= {REENTRY_RSI_MAX}"
+        action = f"⏳ WAIT — Re-entry blocked until {format_reentry_rsi_rule()}"
     elif raw_reentry_trigger and not entry_open_delay_ok:
         action = "⏳ WAIT — Entry delayed after market open"
         instruction_lines.append(
@@ -1541,17 +1571,23 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     elif bot_strategy.get("waiting_for_pullback"):
         benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
         benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
-        benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
+        benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
         benchmark_lines.append(f"Open Delay:    {benchmark_open_delay_status} — no bot buys in first {ENTRY_OPEN_DELAY_MINUTES} market minutes.")
-        benchmark_lines.append("Rule now: benchmark waits for pullback or timeout, and still needs RSI to be ready.")
+        if REENTRY_RSI_MAX is None:
+            benchmark_lines.append("Rule now: benchmark waits for pullback or timeout; RSI is not blocking re-entry.")
+        else:
+            benchmark_lines.append("Rule now: benchmark waits for pullback or timeout, and still needs RSI to be ready.")
     elif bot_strategy.get("waiting_for_early_reentry"):
-        benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
-        benchmark_lines.append("Rule now: benchmark waits for recovery above SMA200 and SMA20, with RSI ready.")
+        benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
+        if REENTRY_RSI_MAX is None:
+            benchmark_lines.append("Rule now: benchmark waits for recovery above SMA200 and SMA20; RSI is not blocking re-entry.")
+        else:
+            benchmark_lines.append("Rule now: benchmark waits for recovery above SMA200 and SMA20, with RSI ready.")
     elif benchmark_guard_cooldown:
         benchmark_lines.append("Rule now: benchmark waits in cash for the rest of this trading day after a failed fresh entry.")
-        benchmark_lines.append("Tomorrow, it can use the normal fresh-entry logic again if trend and RSI allow it.")
+        benchmark_lines.append("Tomorrow, it can use the normal fresh-entry logic again if the trend rules allow it.")
     else:
-        benchmark_lines.append(f"RSI Gate:      {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({benchmark_rsi_status})")
+        benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
         benchmark_lines.append("Rule now: benchmark waits for a fresh TQQQ entry signal.")
     benchmark_lines.append(f"Vs Real Path:   ${strategy_gap:+.2f} ({strategy_gap_pct:+.2f}%)")
 
@@ -1612,11 +1648,10 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🔄 SMA Reset:    {reset_status}")
             lines.append(
                 f"Manual mode rule: re-buy only after a {SWING_REBUY_DROP_PCT * 100:.1f}% pullback, "
-                f"after {MANUAL_REBUY_TIMEOUT_DAYS} trading days, or after an SMA200 reset; always requires RSI <= {REENTRY_RSI_MAX}."
+                f"after {MANUAL_REBUY_TIMEOUT_DAYS} trading days, or after an SMA200 reset; {format_reentry_rsi_rule()}."
             )
         if not position_open:
-            rsi_status = "ready" if reentry_rsi_ok else "too hot"
-            lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max ({rsi_status})")
+            lines.append(f"🧊 Re-entry RSI: {format_reentry_rsi_status(current_rsi, reentry_rsi_ok)}")
             if cash > 0:
                 lines.append("🅿️ Waiting Asset: Cash")
                 lines.append("   Plan: stay in cash until the next TQQQ buy/re-buy signal.")
@@ -1631,9 +1666,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             *build_early_warning_lines(early_warning),
         ])
         if manual_exit_mode:
-            lines.append(f"Current controller: manual safety mode; re-buy waits for pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset, plus RSI <= {REENTRY_RSI_MAX}.")
+            lines.append(f"Current controller: manual safety mode; re-buy waits for pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset; {format_reentry_rsi_rule()}.")
         elif waiting_for_early_reentry:
-            lines.append(f"Current controller: early-risk recovery; re-buy waits for TQQQ above SMA200 and SMA20, plus RSI <= {REENTRY_RSI_MAX}.")
+            lines.append(f"Current controller: early-risk recovery; re-buy waits for TQQQ above SMA200 and SMA20; {format_reentry_rsi_rule()}.")
         lines.extend([
             "─" * 30,
             f"📦 Shares:       {shares:.4f}",
@@ -1687,11 +1722,11 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"⏳ Manual Wait: {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS}")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset: {reset_status}")
-            lines.append(f"Manual mode rule: re-buy only after pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset; always RSI <= {REENTRY_RSI_MAX}.")
+            lines.append(f"Manual mode rule: re-buy only after pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset; {format_reentry_rsi_rule()}.")
         if waiting_for_early_reentry:
-            lines.append(f"🔮 Early Re-buy: above SMA200 and SMA20, RSI <= {REENTRY_RSI_MAX}")
+            lines.append(f"🔮 Early Re-buy: above SMA200 and SMA20; {format_reentry_rsi_rule()}")
         if not position_open:
-            lines.append(f"🧊 Re-entry RSI: {current_rsi:.1f}/{REENTRY_RSI_MAX} max")
+            lines.append(f"🧊 Re-entry RSI: {format_reentry_rsi_status(current_rsi, reentry_rsi_ok)}")
             lines.append("🅿️ Waiting Asset: Cash")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
@@ -1779,7 +1814,7 @@ def mark_manual_sold():
         f"Re-buy pullback: ${rebuy_target:.2f}",
         f"Or: after {MANUAL_REBUY_TIMEOUT_DAYS} trading days if TQQQ is still above SMA200.",
         "Or: wait for price to go below SMA200, then cross back above SMA200.",
-        f"All manual re-buy paths still require RSI14 <= {REENTRY_RSI_MAX}.",
+        f"Manual re-buy RSI rule: {format_reentry_rsi_rule()}.",
         "The bot will not immediately re-buy just because TQQQ is currently above SMA200.",
     ]
     send_telegram("\n".join(lines))

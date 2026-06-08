@@ -85,6 +85,7 @@ Current alignment for month-end testing:
 
 - `tqqq-alert` remains the real master strategy.
 - `real-stock-alert` should have `$0.00` deployable real-stock cash while this TQQQ position is open, but its bot-only stock benchmark can keep running for comparison.
+- `real-stock-alert` now uses its selected max-revenue stock setup for the benchmark and future TQQQ-out stock bucket: RS63-heavy scoring, 8% ATR fresh-buy cap, two-week rank confirmation, and no fixed timeout.
 - `swing-stock-alert` remains paused and should be used only as optional historical paper-demo context.
 
 If broker cash or shares differ from the repo's tracked state, run the relevant manual sync action:

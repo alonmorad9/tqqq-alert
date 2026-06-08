@@ -124,3 +124,5 @@ Current inspected state on 2026-06-08:
 While this position is open, follow the active-position exit/risk rules. If the broker cash or shares differ from `position_state.json`, run the relevant manual sync action.
 
 Month-end comparison should treat this repo as the real source of truth. The real-stock repo is only an optional TQQQ-out stock engine while this repo is out/waiting, and the old swing-stock repo is paused historical context.
+
+As of the 2026-06-08 alignment pass, `real-stock-alert` uses its selected max-revenue stock setup for its bot-only benchmark and any future TQQQ-out stock bucket: RS63-heavy scoring, 8% ATR fresh-buy cap, two-week rank confirmation, and no fixed timeout. It should still show `$0.00` deployable real-stock cash while this TQQQ position is open.

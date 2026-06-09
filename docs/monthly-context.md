@@ -28,7 +28,6 @@ The selected live TQQQ rule set is now the **Best Calmar high-return** profile. 
 | Parabolic profit exit | 5-day return >= 25% or 10-day return >= 30% |
 | Waiting asset | Cash only |
 | Early-warning risk | Advisory only |
-| Manual caution overlay | Advisory only: optional stop 8% below highest high when profitable and very stretched |
 
 ## Entry And Re-entry
 
@@ -54,23 +53,6 @@ While holding TQQQ, the bot can tell the user to sell all when:
 - The parabolic 5-day or 10-day stretch rule is hit while the position is profitable.
 
 After any sell, the repo stays in cash and waits for the next TQQQ re-entry signal.
-
-## Manual Caution Overlay
-
-This is not an automatic bot sell rule. It is an extra warning for days when TQQQ is profitable and very stretched.
-
-The Telegram report shows `Manual Caution Mode — ACTIVE` when one of these rare stretch warnings is active while the position is profitable:
-
-- TQQQ 5-day return is at least 25%.
-- TQQQ 10-day return is at least 30%.
-- RSI14 is at least 80 and TQQQ 5-day return is at least 15%.
-- VIX 5-day spike is at least 25% while RSI is rolling over from 70+.
-
-When active, the suggested optional manual stop is:
-
-`highest high since entry * 0.92`
-
-Use it only if you want extra protection during a very stretched profitable move. If the broker sells from that manual stop, run `manual_sold` with the real execution price so the repo state matches the broker.
 
 ## Manual Modes
 
@@ -138,7 +120,6 @@ After reviewing the one-month behavior from the first TQQQ buy through the June 
 - RSI re-entry gate off.
 - Parabolic profit exit on 5-day >= 25% or 10-day >= 30%.
 - Early-warning section remains advisory only.
-- Manual Caution Mode remains advisory only and suggests an optional manual stop 8% below the highest high since entry.
 
 Combined-rule historical comparison:
 

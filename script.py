@@ -31,7 +31,6 @@ AUTO_EARLY_WARNING_EXIT = False
 REENTRY_RSI_MAX = None
 PARABOLIC_RET5_WARNING_PCT = 0.25
 PARABOLIC_RET10_WARNING_PCT = 0.30
-MANUAL_CAUTION_STOP_PCT = 0.08
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -815,57 +814,6 @@ def build_early_warning_lines(early_warning):
     ]
 
 
-def calculate_manual_caution(ticker, position_open, avg_cost, current_price, highest_high_since_entry, early_warning):
-    row = ticker.iloc[-1]
-    rsi14 = float(row["RSI14"])
-    ret5 = float(row["RET5"])
-    ret10 = float(row["RET10"])
-    profitable = position_open and avg_cost > 0 and current_price > avg_cost
-    fast_drop_combo = (
-        "VIX 5d spike >= 25%" in early_warning["active"]
-        and "RSI falling from 70+" in early_warning["active"]
-    )
-    triggers = []
-    if ret5 >= 0.25:
-        triggers.append(f"5d surge {ret5:+.1%}")
-    if ret10 >= 0.30:
-        triggers.append(f"10d surge {ret10:+.1%}")
-    if rsi14 >= 80 and ret5 >= 0.15:
-        triggers.append(f"RSI {rsi14:.1f} with 5d move {ret5:+.1%}")
-    if fast_drop_combo:
-        triggers.append("VIX spike + RSI rollover")
-
-    active = profitable and bool(triggers)
-    stop = None
-    if active and highest_high_since_entry is not None:
-        stop = round(float(highest_high_since_entry) * (1 - MANUAL_CAUTION_STOP_PCT), 2)
-
-    return {
-        "active": active,
-        "triggers": triggers,
-        "stop": stop,
-        "stop_pct": MANUAL_CAUTION_STOP_PCT,
-        "highest_high": float(highest_high_since_entry) if highest_high_since_entry is not None else None,
-    }
-
-
-def build_manual_caution_lines(manual_caution):
-    if manual_caution["active"]:
-        trigger_text = ", ".join(manual_caution["triggers"])
-        return [
-            "🟠 Manual Caution Mode — ACTIVE",
-            "Meaning: TQQQ is profitable and unusually stretched. The bot will NOT auto-sell from this warning.",
-            f"What to do: if you want extra protection, set a broker/TradingView stop near ${manual_caution['stop']:.2f}.",
-            f"Stop logic: {manual_caution['stop_pct']:.0%} below the highest high since entry (${manual_caution['highest_high']:.2f}).",
-            f"Why active: {trigger_text}.",
-            "If that manual stop sells in your broker, run manual_sold with the real execution price.",
-        ]
-    return [
-        "🟠 Manual Caution Mode — off",
-        "Meaning: no rare profit-stretch warning right now. Use the normal Action line and bot stops.",
-    ]
-
-
 def calculate_parabolic_stretch(ticker):
     row = ticker.iloc[-1]
     ret5 = float(row["RET5"])
@@ -1206,14 +1154,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     )
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
-    manual_caution = calculate_manual_caution(
-        ticker,
-        position_open,
-        avg_cost,
-        current_price,
-        highest_high_since_entry,
-        early_warning,
-    )
     position_value = shares * current_price
     cost_basis = shares * avg_cost
     total_value = cash + position_value
@@ -1566,14 +1506,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         ticker,
         current_price,
     )
-    manual_caution = calculate_manual_caution(
-        ticker,
-        position_open,
-        avg_cost,
-        current_price,
-        highest_high_since_entry,
-        early_warning,
-    )
     position_value = shares * current_price
     cost_basis = shares * avg_cost
     total_value = cash + position_value
@@ -1731,8 +1663,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "─" * 30,
             *build_parabolic_warning_lines(ticker),
             "─" * 30,
-            *build_manual_caution_lines(manual_caution),
-            "─" * 30,
             *build_early_warning_lines(early_warning),
         ])
         if manual_exit_mode:
@@ -1784,9 +1714,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             )
         if next_profit_target:
             lines.append(f"🎯 Next Profit: ${next_profit_target:.2f}")
-        if manual_caution["active"]:
-            lines.append(f"🟠 Manual Caution: ACTIVE — optional stop near ${manual_caution['stop']:.2f}")
-            lines.append("   Meaning: advisory only; the bot will not auto-sell from this warning.")
         if rebuy_target:
             lines.append(f"🔁 Re-buy:     ${rebuy_target:.2f}")
             lines.append(f"⏳ Wait Days:  {pullback_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")

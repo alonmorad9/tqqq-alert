@@ -20,6 +20,7 @@ Current live rules are the **Best Calmar high-return** profile:
 | Parabolic exit | 5d >= 25% or 10d >= 30% |
 | Waiting state | Cash |
 | Early-warning risk | Advisory only |
+| Manual caution overlay | Advisory only: optional stop 8% below highest high when profitable and very stretched |
 
 ## Historical Research Summary
 
@@ -39,7 +40,10 @@ The selected Best Calmar profile is:
 - Parabolic profit exit using 5-day >= 25% or 10-day >= 30%.
 - Early-warning signals remain in Telegram as context only; they no longer trigger automatic exits.
 - The fast-drop combo `VIX 5d spike >= 25%` plus `RSI falling from 70+` is highlighted clearly as advisory guidance to consider manual stop tightening.
+- Manual Caution Mode appears in Telegram when TQQQ is profitable and unusually stretched. It suggests an optional manual stop at `highest high since entry * 0.92`; it does not auto-sell.
 - Cash while waiting.
+
+Manual Caution Mode activates when the position is profitable and one of these rare stretch warnings appears: TQQQ 5-day return >= 25%, TQQQ 10-day return >= 30%, RSI14 >= 80 with TQQQ 5-day return >= 15%, or VIX 5-day spike >= 25% while RSI is rolling over from 70+.
 
 Backtest comparison from the combined-rule grid:
 

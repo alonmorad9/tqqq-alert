@@ -1,23 +1,24 @@
 # TQQQ Research Handoff
 
-Last updated: 2026-06-08
+Last updated: 2026-06-10
 
 ## Current Strategy
 
 The repo is intentionally **TQQQ-only**. Out-of-position capital is modeled as cash.
 
-Current live rules are the **Best Calmar high-return** profile:
+Current live rules are the **New Broad Max / max-revenue** profile:
 
 | Rule | Value |
 |---|---:|
 | TQQQ trailing stop | 25% |
 | Fresh-entry guard | 10% below average cost for first 2 trading days |
-| Profit target | +20%, sell all |
+| Profit target | +25%, sell all |
 | Re-buy pullback | -7.5% from exit price |
 | Re-buy timeout | 10 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI cap | Off |
-| Parabolic exit | 5d >= 25% or 10d >= 30% |
+| Re-entry RSI cap | RSI14 <= 70 |
+| SMA200 confirmation | 3 confirmed checks/days |
+| Parabolic stretch | Advisory only |
 | Waiting state | Cash |
 | Early-warning risk | Advisory only |
 
@@ -25,28 +26,35 @@ Current live rules are the **Best Calmar high-return** profile:
 
 The selected rule set came from the combined TQQQ strategy searches saved under `research/`.
 
-On 2026-06-08, the repo compared max-revenue, practical-protection, low-drawdown, and robustness-tested combined rule sets. The chosen live strategy is now the Best Calmar high-return profile: aggressive, but less fragile than the raw max-revenue winner.
+On 2026-06-10, after another broad combined-rule search and walk-forward robustness check, the user chose the New Broad Max setup for maximum revenue.
 
-The selected Best Calmar profile is:
+The selected New Broad Max profile is:
 
 - 25% trailing stop.
 - Temporary 10% fresh-entry guard for the first 2 trading days after a buy.
-- +20% profit target.
+- +25% profit target.
 - -7.5% pullback re-entry.
 - 10 trading-day timeout after normal profit exits.
 - 3 trading-day timeout after manual safety sells.
-- RSI re-entry gate off.
-- Parabolic profit exit using 5-day >= 25% or 10-day >= 30%.
+- RSI re-entry cap: RSI14 <= 70.
+- 3 confirmed SMA200 checks/days for entries and exits.
+- Parabolic stretch warnings remain visible, but they are advisory only and do not auto-sell.
 - Early-warning signals remain in Telegram as context only; they no longer trigger automatic exits.
 - The fast-drop combo `VIX 5d spike >= 25%` plus `RSI falling from 70+` is highlighted clearly as advisory guidance to consider manual stop tightening.
 - Cash while waiting.
 
 Backtest comparison from the combined-rule grid:
 
-- Raw max-revenue winner: `374.8x`, `46.6% CAGR`, `-43.6% max drawdown`; likely too optimized and dependent on a tight 12% stop.
-- Best Calmar selected profile: `309.3x`, `44.8% CAGR`, `-37.3% max drawdown`, `61.3% win rate`.
+- New Broad Max selected profile: `420.4x`, `-42.5% max drawdown`, `68.6% win rate`.
+- Previous Best Calmar profile: `309.3x`, `44.8% CAGR`, `-37.3% max drawdown`, `61.3% win rate`.
 - Best <=35% drawdown profile: `166.3x`, `39.1% CAGR`, `-33.5% max drawdown`.
 - Current practical-protection profile before this switch: `20.4x`, `21.5% CAGR`, `-32.8% max drawdown`.
+
+Walk-forward robustness summary:
+
+- New Broad Max won 4 of 5 tested periods against the previous recommended profile.
+- It lost only in 2015-2018.
+- The tradeoff is clear: more historical revenue and better win rate, but larger drawdown risk.
 
 Recent one-month simulation from the April 29 position through the June 5 close:
 

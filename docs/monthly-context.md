@@ -1,6 +1,6 @@
 # TQQQ Bot Monthly Context
 
-Last updated: 2026-06-08
+Last updated: 2026-06-10
 
 ## Current Decision
 
@@ -14,18 +14,19 @@ The live repo is now **TQQQ-only**.
 
 ## Live Strategy
 
-The selected live TQQQ rule set is now the **Best Calmar high-return** profile. It was chosen after comparing max-revenue, practical-protection, low-drawdown, and robustness tests. The goal is aggressive compounding with a better return/drawdown balance than the raw max-revenue winner.
+The selected live TQQQ rule set is now the **New Broad Max / max-revenue** profile. It was chosen after comparing the current recommended setup, the broader max-revenue setup, and walk-forward robustness periods. The user chose maximum return while accepting larger drawdown risk.
 
 | Rule | Current Value |
 |---|---:|
 | TQQQ trailing stop | 25% from highest high since entry |
 | Fresh-entry guard | 10% below average cost for first 2 trading days |
-| Profit target | Sell all at +20% from average cost |
+| Profit target | Sell all at +25% from average cost |
 | Re-buy pullback | Buy after -7.5% from profit/manual exit price |
 | Profit re-buy timeout | 10 trading days |
 | Manual safety timeout | 3 trading days |
-| Re-entry RSI guard | Off |
-| Parabolic profit exit | 5-day return >= 25% or 10-day return >= 30% |
+| Re-entry RSI guard | RSI14 <= 70 |
+| SMA200 confirmation | 3 confirmed checks/days above for entry, 3 below for exit |
+| Parabolic stretch | Advisory only; no automatic sell |
 | Waiting asset | Cash only |
 | Early-warning risk | Advisory only |
 
@@ -37,10 +38,10 @@ The bot can buy/re-buy TQQQ when one of the re-entry triggers is active and all 
 - Profit timeout: 10 trading days passed since the profit exit, trend is still above SMA200.
 - Manual pullback: price is at least 7.5% below the manual sell price.
 - Manual timeout: 3 trading days passed since the manual sell, trend is still above SMA200.
-- SMA reset after manual sell: price first went below SMA200, then crossed back above it.
+- SMA reset after manual sell: price first confirms below SMA200, then confirms back above it.
 - Fast-drop combo warning: `VIX 5d spike >= 25%` plus `RSI falling from 70+`. This is an important advisory warning; it does not sell automatically in the current rule set.
 
-The re-entry RSI gate is currently off.
+The re-entry RSI gate is currently `RSI14 <= 70`.
 
 ## Exit Rules
 
@@ -48,9 +49,8 @@ While holding TQQQ, the bot can tell the user to sell all when:
 
 - TQQQ is within the first 2 trading days after entry and falls 10% below average cost.
 - TQQQ falls below the 25% trailing stop.
-- TQQQ crosses below SMA200.
-- TQQQ reaches +20% profit from average cost.
-- The parabolic 5-day or 10-day stretch rule is hit while the position is profitable.
+- TQQQ confirms below SMA200 for 3 checks/days.
+- TQQQ reaches +25% profit from average cost.
 
 After any sell, the repo stays in cash and waits for the next TQQQ re-entry signal.
 
@@ -110,6 +110,30 @@ Recent intraday check: using the free March-June 2026 5-minute Yahoo window, the
 
 This is meant to catch failed new entries without replacing the main 25% trend stop.
 
+## 2026-06-10 New Broad Max Strategy Switch
+
+After deeper robustness testing, the user decided to move from the Best Calmar high-return profile to the New Broad Max profile for maximum revenue.
+
+Selected rules:
+
+- 25% trailing stop.
+- +25% profit target.
+- -7.5% pullback re-entry from the actual sell price.
+- 10 trading-day profit re-entry timeout.
+- 3 trading-day manual safety timeout.
+- RSI re-entry cap: RSI14 <= 70.
+- 3-check/day SMA200 confirmation for entries and exits.
+- Parabolic 5-day/10-day stretch remains visible in Telegram but is advisory only.
+- Early-warning section remains advisory only.
+
+Historical robustness summary:
+
+- New Broad Max: `420.4x`, `-42.5% max drawdown`, `68.6% win rate`.
+- Current recommended / Best Calmar before switch: `309.3x`, `-37.3% max drawdown`, `61.3% win rate`.
+- Walk-forward comparison: New Broad Max won 4 of 5 tested periods, losing only in 2015-2018.
+
+This is the aggressive choice. It is not the lowest-drawdown choice, but it was selected because the user explicitly wants maximum revenue.
+
 ## 2026-06-08 Best Calmar Strategy Switch
 
 After reviewing the one-month behavior from the first TQQQ buy through the June 5 drop, the repo first tested a practical-protection profile, then compared all combined rule families again. The selected production profile is now the Best Calmar high-return setup:
@@ -135,7 +159,7 @@ Recent one-month simulation from the April 29 position through the June 5 close:
 - Practical-protection profile: `$2,791.96`, `+12.1%`, `-10.5% max drawdown`.
 - Raw max-revenue winner: `$2,821.45`, `+13.3%`, `-11.7% max drawdown`.
 
-The selected Best Calmar profile is the compromise: close to max-revenue historically, less fragile than the raw max winner, and much stronger than the very defensive practical-protection setup.
+This profile was later replaced on 2026-06-10 by the New Broad Max profile after the user chose maximum revenue over the lower-drawdown compromise.
 
 ## 2026-06-06 Intraday Entry Open Delay
 
@@ -151,7 +175,7 @@ Production choice: delay all bot-generated buy signals for the first 30 market m
 
 The bot-only benchmark models what would happen if the user followed only the bot's TQQQ instructions.
 
-- It uses the same live Best Calmar TQQQ-only rule set.
+- It uses the same live New Broad Max TQQQ-only rule set.
 - It stays in cash while out of TQQQ.
 - It does not include manual moves unless they are part of the modeled bot rules.
 
@@ -168,10 +192,11 @@ The bot-only benchmark models what would happen if the user followed only the bo
 
 - טריילינג סטופ של 25% מהשיא מאז הכניסה.
 - הגנת כניסה חדשה: ביומיים הראשונים אחרי קנייה, אם TQQQ יורדת 10% מתחת למחיר הקנייה הממוצע, הבוט נותן הוראת מכירה.
-- מכירה מלאה ברווח של 20%.
+- מכירה מלאה ברווח של 25%.
 - כניסה מחדש אחרי ירידה של 7.5% ממחיר היציאה. אחרי מכירת רווח רגילה הטיימאאוט הוא 10 ימי מסחר; אחרי מכירה ידנית הטיימאאוט הוא 3 ימי מסחר.
-- אין חסימת RSI לכניסה מחדש.
-- יציאת parabolic אם תשואת 5 ימים גדולה או שווה 25% או תשואת 10 ימים גדולה או שווה 30%.
+- חסימת RSI לכניסה מחדש: RSI14 <= 70.
+- אישור SMA200 דורש 3 בדיקות/ימים מעל לכניסה ו-3 מתחת ליציאה.
+- Parabolic הוא מידע בלבד ולא מוכר אוטומטית.
 - אזהרות סיכון הן מידע בלבד ולא מוכרות אוטומטית.
 - אם מופיע שילוב מהיר של קפיצה ב-VIX ו-RSI יורד, זו אזהרה חשובה לשקול הגנה ידנית.
 - בזמן המתנה: מזומן בלבד.

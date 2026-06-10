@@ -20,15 +20,17 @@ MARKET_TZ = ZoneInfo("America/New_York")
 TRAILING_STOP_PCT = 0.25
 FRESH_ENTRY_GUARD_PCT = 0.10
 FRESH_ENTRY_GUARD_DAYS = 2
-SWING_PROFIT_TARGET_PCT = 0.20
+SWING_PROFIT_TARGET_PCT = 0.25
 SWING_REBUY_DROP_PCT = 0.075
 SWING_REBUY_TIMEOUT_DAYS = 10
 MANUAL_REBUY_TIMEOUT_DAYS = 3
+SMA_CONFIRM_DAYS = 3
 EARLY_WARNING_VIX_LEVEL = 25
 EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
 AUTO_EARLY_WARNING_EXIT = False
-REENTRY_RSI_MAX = None
+AUTO_PARABOLIC_EXIT = False
+REENTRY_RSI_MAX = 70
 PARABOLIC_RET5_WARNING_PCT = 0.25
 PARABOLIC_RET10_WARNING_PCT = 0.30
 
@@ -618,6 +620,44 @@ def format_reentry_rsi_rule():
     return f"RSI <= {REENTRY_RSI_MAX}"
 
 
+def trailing_true_count(series):
+    count = 0
+    for value in reversed(series.tolist()):
+        if bool(value):
+            count += 1
+        else:
+            break
+    return count
+
+
+def calculate_sma200_confirmation(ticker):
+    above_series = ticker["Close"] > ticker["SMA200"]
+    below_series = ticker["Close"] < ticker["SMA200"]
+    previous_above_series = above_series.iloc[:-1]
+    previous_below_series = below_series.iloc[:-1]
+
+    above_days = trailing_true_count(above_series)
+    below_days = trailing_true_count(below_series)
+    previous_above_days = trailing_true_count(previous_above_series) if not previous_above_series.empty else 0
+    previous_below_days = trailing_true_count(previous_below_series) if not previous_below_series.empty else 0
+
+    return {
+        "above_days": above_days,
+        "below_days": below_days,
+        "above_confirmed": above_days >= SMA_CONFIRM_DAYS,
+        "below_confirmed": below_days >= SMA_CONFIRM_DAYS,
+        "crossed_above_confirmed": above_days >= SMA_CONFIRM_DAYS and previous_above_days < SMA_CONFIRM_DAYS,
+        "crossed_below_confirmed": below_days >= SMA_CONFIRM_DAYS and previous_below_days < SMA_CONFIRM_DAYS,
+    }
+
+
+def format_sma_confirmation(sma_confirmation):
+    return (
+        f"above {sma_confirmation['above_days']}/{SMA_CONFIRM_DAYS}, "
+        f"below {sma_confirmation['below_days']}/{SMA_CONFIRM_DAYS}"
+    )
+
+
 def calculate_fresh_entry_guard(position_open, avg_cost, entry_date, ticker, current_price):
     if not position_open or not avg_cost or not entry_date:
         return {
@@ -840,10 +880,10 @@ def build_parabolic_warning_lines(ticker):
     level = "Watch" if active else "Low"
     active_text = ", ".join(active) if active else "none"
     return [
-        "⚡ Parabolic Profit Rule",
-        "Meaning: this CAN trigger SELL ALL, but only when TQQQ is open, profitable, and has spiked unusually fast.",
-        "What to do: if Action says SELL, sell; otherwise it is just a stretch meter.",
-        f"Level:         {level} — Watch means the spike rule is active; Low means no parabolic sell pressure.",
+        "⚡ Parabolic Stretch — advisory only",
+        "Meaning: TQQQ has moved unusually fast. In the current max-revenue strategy this does not sell by itself.",
+        "What to do: use it as a stretch warning; follow the main Action line for actual buy/sell instructions.",
+        f"Level:         {level} — Watch means TQQQ is stretched; Low means no unusual spike pressure.",
         f"Active:        {active_text}",
         f"5d / 10d Ret:  {ret5:+.1%} / {ret10:+.1%} — shows how fast TQQQ has moved recently.",
     ]
@@ -855,8 +895,6 @@ def update_bot_strategy_benchmark(ticker):
     current_price = float(ticker["Close"].iloc[-1])
     current_high = float(ticker["High"].iloc[-1])
     sma200 = float(ticker["SMA200"].iloc[-1])
-    prev_price = float(ticker["Close"].iloc[-2])
-    prev_sma200 = float(ticker["SMA200"].iloc[-2])
     current_date = ticker.index[-1].strftime("%Y-%m-%d")
     current_rsi = float(ticker["RSI14"].iloc[-1])
     reentry_rsi_ok = reentry_rsi_ready(current_rsi)
@@ -893,8 +931,9 @@ def update_bot_strategy_benchmark(ticker):
     )
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
-    crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
-    crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
+    sma_confirmation = calculate_sma200_confirmation(ticker)
+    crossed_below_sma = sma_confirmation["crossed_below_confirmed"]
+    crossed_above_sma = sma_confirmation["crossed_above_confirmed"]
     hit_fresh_entry_guard = fresh_entry_guard["hit"]
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and AUTO_EARLY_WARNING_EXIT and early_warning["hit"]
@@ -905,13 +944,14 @@ def update_bot_strategy_benchmark(ticker):
         and current_price >= avg_cost * (1 + SWING_PROFIT_TARGET_PCT)
     )
     hit_parabolic_exit = (
-        position_open
+        AUTO_PARABOLIC_EXIT
+        and position_open
         and shares > 0
         and avg_cost > 0
         and current_price >= avg_cost
         and parabolic["hit"]
     )
-    above_sma = current_price > sma200
+    above_sma = sma_confirmation["above_confirmed"]
     hit_rebuy_pullback = (
         waiting_for_pullback
         and last_profit_sell_price is not None
@@ -923,7 +963,7 @@ def update_bot_strategy_benchmark(ticker):
     hit_rebuy_signal = raw_rebuy_signal and entry_open_delay_ok
     hit_early_reentry_signal = (
         waiting_for_early_reentry
-        and current_price > sma200
+        and above_sma
         and current_price > float(ticker["SMA20"].iloc[-1])
         and reentry_rsi_ok
         and entry_open_delay_ok
@@ -966,7 +1006,8 @@ def update_bot_strategy_benchmark(ticker):
         state_changed = True
     elif position_open and hit_profit_target:
         cash += shares * current_price
-        action = "benchmark_profit_exit_20"
+        target_pct = int(round(SWING_PROFIT_TARGET_PCT * 100))
+        action = f"benchmark_profit_exit_{target_pct}"
         state.update({
             "position_open": False,
             "shares": 0.0,
@@ -1116,8 +1157,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     sma200 = float(ticker["SMA200"].iloc[-1])
     current_rsi = float(ticker["RSI14"].iloc[-1])
     reentry_rsi_ok = reentry_rsi_ready(current_rsi)
-    prev_price = float(ticker["Close"].iloc[-2])
-    prev_sma200 = float(ticker["SMA200"].iloc[-2])
+    sma_confirmation = calculate_sma200_confirmation(ticker)
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
@@ -1161,8 +1201,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     pnl_pct = (pnl / cost_basis) * 100 if cost_basis else 0.0
 
     # ── SIGNAL DETECTION ──────────────────────────────────
-    crossed_below_sma = prev_price >= prev_sma200 and current_price < sma200
-    crossed_above_sma = prev_price <= prev_sma200 and current_price > sma200
+    crossed_below_sma = sma_confirmation["crossed_below_confirmed"]
+    crossed_above_sma = sma_confirmation["crossed_above_confirmed"]
     hit_fresh_entry_guard = fresh_entry_guard["hit"]
     hit_trailing_stop = trailing_stop is not None and current_price < trailing_stop
     hit_early_warning_exit = position_open and AUTO_EARLY_WARNING_EXIT and early_warning["hit"]
@@ -1173,14 +1213,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         and current_price >= avg_cost * (1 + SWING_PROFIT_TARGET_PCT)
     )
     hit_parabolic_exit = (
-        position_open
+        AUTO_PARABOLIC_EXIT
+        and position_open
         and shares > 0
         and avg_cost > 0
         and current_price >= avg_cost
         and parabolic["hit"]
     )
-    above_sma = current_price > sma200
-    if manual_exit_mode and current_price < sma200 and not manual_exit_saw_below_sma:
+    above_sma = sma_confirmation["above_confirmed"]
+    if manual_exit_mode and sma_confirmation["below_confirmed"] and not manual_exit_saw_below_sma:
         manual_exit_saw_below_sma = True
         state["manual_exit_saw_below_sma"] = True
         state_dirty = True
@@ -1206,7 +1247,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     ) and above_sma and reentry_rsi_ok and entry_open_delay_ok
     hit_early_reentry_signal = (
         waiting_for_early_reentry
-        and current_price > sma200
+        and above_sma
         and current_price > float(ticker["SMA20"].iloc[-1])
         and reentry_rsi_ok
         and entry_open_delay_ok
@@ -1217,15 +1258,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         and state.get("fresh_entry_guard_exit_date") == current_date
     )
     hit_fresh_buy_signal = (
-        crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
+        crossed_above_sma or (not state.get("last_action") and above_sma and current_price > float(ticker["SMA20"].iloc[-1]))
     ) and entry_open_delay_ok and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode and reentry_rsi_ok
 
     raw_reentry_trigger = (
         ((hit_rebuy_pullback or hit_rebuy_timeout) and above_sma)
         or ((hit_manual_rebuy_pullback or hit_manual_rebuy_reset or hit_manual_rebuy_timeout) and above_sma)
-        or (waiting_for_early_reentry and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1]))
+        or (waiting_for_early_reentry and above_sma and current_price > float(ticker["SMA20"].iloc[-1]))
         or (
-            (crossed_above_sma or (not state.get("last_action") and current_price > sma200 and current_price > float(ticker["SMA20"].iloc[-1])))
+            (crossed_above_sma or (not state.get("last_action") and above_sma and current_price > float(ticker["SMA20"].iloc[-1])))
             and not fresh_guard_cooldown
             and not waiting_for_pullback
             and not waiting_for_early_reentry
@@ -1307,8 +1348,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             "last_action": "sell_all_sma200",
         })
         state_changed = True
-        action = "🚨 SELL NOW — CROSSED BELOW SMA200"
+        action = f"🚨 SELL NOW — SMA200 WEAKNESS CONFIRMED ({SMA_CONFIRM_DAYS} DAYS)"
         instruction_lines.append(f"Sell all remaining shares: {sell_shares:.4f}")
+        instruction_lines.append(f"Reason: TQQQ has stayed below SMA200 for {SMA_CONFIRM_DAYS} confirmed checks/days.")
         instruction_lines.append("After selling, wait in cash until the next TQQQ re-entry signal.")
     elif position_open and hit_profit_target:
         sell_shares = shares
@@ -1394,7 +1436,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
         if buy_shares > 0:
             buy_reason = "buy_sma200"
-            action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
+            action = f"🟢 BUY SIGNAL — SMA200 STRENGTH CONFIRMED ({SMA_CONFIRM_DAYS} DAYS)"
             if hit_rebuy_pullback:
                 buy_reason = "buy_swing_pullback"
                 action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
@@ -1439,7 +1481,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 f"for the first {FRESH_ENTRY_GUARD_DAYS} trading days."
             )
         else:
-            action = "🟢 BUY SIGNAL — PRICE CROSSED ABOVE SMA200"
+            action = f"🟢 BUY SIGNAL — SMA200 STRENGTH CONFIRMED ({SMA_CONFIRM_DAYS} DAYS)"
             if hit_rebuy_pullback:
                 action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
             elif hit_rebuy_timeout:
@@ -1567,7 +1609,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
                 f"Fresh Guard:   ${benchmark_guard['stop']:.2f} "
                 f"({benchmark_guard['days']}/{benchmark_guard['days_limit']} days)"
             )
-        benchmark_lines.append("Rule now: benchmark is holding TQQQ until fresh-entry guard, profit target, early-warning exit, parabolic exit, SMA200 exit, or trailing stop.")
+        benchmark_lines.append(f"Rule now: benchmark holds TQQQ until fresh-entry guard, +{SWING_PROFIT_TARGET_PCT * 100:.0f}% profit target, confirmed SMA200 exit, or trailing stop.")
+        benchmark_lines.append("Parabolic and early-drop sections are advisory only in this max-revenue setup.")
     elif bot_strategy.get("waiting_for_pullback"):
         benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
         benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
@@ -1580,9 +1623,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     elif bot_strategy.get("waiting_for_early_reentry"):
         benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
         if REENTRY_RSI_MAX is None:
-            benchmark_lines.append("Rule now: benchmark waits for recovery above SMA200 and SMA20; RSI is not blocking re-entry.")
+            benchmark_lines.append(f"Rule now: benchmark waits for confirmed recovery above SMA200 and SMA20; RSI is not blocking re-entry.")
         else:
-            benchmark_lines.append("Rule now: benchmark waits for recovery above SMA200 and SMA20, with RSI ready.")
+            benchmark_lines.append(f"Rule now: benchmark waits for confirmed recovery above SMA200 and SMA20, with RSI ready.")
     elif benchmark_guard_cooldown:
         benchmark_lines.append("Rule now: benchmark waits in cash for the rest of this trading day after a failed fresh entry.")
         benchmark_lines.append("Tomorrow, it can use the normal fresh-entry logic again if the trend rules allow it.")
@@ -1615,6 +1658,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"💰 Price:        ${current_price:.2f}",
             f"🕒 Price Source: {price_source}",
             f"📈 SMA200:       ${sma200:.2f}  ({gap_to_sma:+.1f}% away)",
+            f"✅ SMA Confirm:  {format_sma_confirmation(sma_confirmation)}",
         ]
         if trailing_stop is not None:
             lines.append(f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)")
@@ -1648,7 +1692,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"🔄 SMA Reset:    {reset_status}")
             lines.append(
                 f"Manual mode rule: re-buy only after a {SWING_REBUY_DROP_PCT * 100:.1f}% pullback, "
-                f"after {MANUAL_REBUY_TIMEOUT_DAYS} trading days, or after an SMA200 reset; {format_reentry_rsi_rule()}."
+                f"after {MANUAL_REBUY_TIMEOUT_DAYS} trading days, or after a confirmed SMA200 reset; {format_reentry_rsi_rule()}."
             )
         if not position_open:
             lines.append(f"🧊 Re-entry RSI: {format_reentry_rsi_status(current_rsi, reentry_rsi_ok)}")
@@ -1666,9 +1710,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             *build_early_warning_lines(early_warning),
         ])
         if manual_exit_mode:
-            lines.append(f"Current controller: manual safety mode; re-buy waits for pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset; {format_reentry_rsi_rule()}.")
+            lines.append(f"Current controller: manual safety mode; re-buy waits for pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or confirmed SMA200 reset; {format_reentry_rsi_rule()}.")
         elif waiting_for_early_reentry:
-            lines.append(f"Current controller: early-risk recovery; re-buy waits for TQQQ above SMA200 and SMA20; {format_reentry_rsi_rule()}.")
+            lines.append(f"Current controller: early-risk recovery; re-buy waits for confirmed TQQQ strength above SMA200 and SMA20; {format_reentry_rsi_rule()}.")
         lines.extend([
             "─" * 30,
             f"📦 Shares:       {shares:.4f}",
@@ -1704,6 +1748,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"💰 Price:      ${current_price:.2f}",
             f"🕒 Source:     {price_source}",
             f"📈 SMA200:     ${sma200:.2f}",
+            f"✅ SMA Confirm: {format_sma_confirmation(sma_confirmation)}",
         ]
         if trailing_stop is not None:
             lines.append(f"🛑 Trail Stop: ${trailing_stop:.2f}")
@@ -1722,9 +1767,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             lines.append(f"⏳ Manual Wait: {manual_wait_days}/{MANUAL_REBUY_TIMEOUT_DAYS}")
             reset_status = "seen" if manual_exit_saw_below_sma else "not yet"
             lines.append(f"🔄 SMA Reset: {reset_status}")
-            lines.append(f"Manual mode rule: re-buy only after pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or SMA200 reset; {format_reentry_rsi_rule()}.")
+            lines.append(f"Manual mode rule: re-buy only after pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or confirmed SMA200 reset; {format_reentry_rsi_rule()}.")
         if waiting_for_early_reentry:
-            lines.append(f"🔮 Early Re-buy: above SMA200 and SMA20; {format_reentry_rsi_rule()}")
+            lines.append(f"🔮 Early Re-buy: confirmed above SMA200 and SMA20; {format_reentry_rsi_rule()}")
         if not position_open:
             lines.append(f"🧊 Re-entry RSI: {format_reentry_rsi_status(current_rsi, reentry_rsi_ok)}")
             lines.append("🅿️ Waiting Asset: Cash")
@@ -1812,8 +1857,8 @@ def mark_manual_sold():
         f"Tracked cash: ${cash:.2f}",
         "─" * 30,
         f"Re-buy pullback: ${rebuy_target:.2f}",
-        f"Or: after {MANUAL_REBUY_TIMEOUT_DAYS} trading days if TQQQ is still above SMA200.",
-        "Or: wait for price to go below SMA200, then cross back above SMA200.",
+        f"Or: after {MANUAL_REBUY_TIMEOUT_DAYS} trading days if TQQQ has confirmed above SMA200 and {format_reentry_rsi_rule()}.",
+        f"Or: wait for price to confirm below SMA200 for {SMA_CONFIRM_DAYS} checks/days, then confirm back above it.",
         f"Manual re-buy RSI rule: {format_reentry_rsi_rule()}.",
         "The bot will not immediately re-buy just because TQQQ is currently above SMA200.",
     ]

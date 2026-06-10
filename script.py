@@ -738,12 +738,18 @@ def calculate_early_warning(ticker):
         "threshold": EARLY_WARNING_RISK_THRESHOLD,
         "level": level,
         "active": active,
+        "checks": [
+            {"label": label, "active": bool(is_active)}
+            for label, is_active in conditions
+        ],
         "hit": score >= EARLY_WARNING_RISK_THRESHOLD,
         "vix": float(row["VIX_Close"]),
         "vix_ret5": float(row["VIX_RET5"]),
         "qqq_close": float(row["QQQ_Close"]),
         "qqq_ema21": float(row["QQQ_EMA21"]),
+        "tqqq_close": float(row["Close"]),
         "tqqq_sma50": float(row["SMA50"]),
+        "prev_rsi14": float(prev["RSI14"]),
         "rsi14": float(row["RSI14"]),
     }
 
@@ -823,6 +829,11 @@ def build_risk_context(ticker, current_price, sma200, trailing_stop):
 
 def build_early_warning_lines(early_warning):
     active = ", ".join(early_warning["active"]) if early_warning["active"] else "none"
+    check_count = len(early_warning.get("checks", [])) or 5
+    check_lines = []
+    for idx, check in enumerate(early_warning.get("checks", []), start=1):
+        status = "YES" if check["active"] else "no"
+        check_lines.append(f"{idx}. {check['label']}: {status}")
     fast_drop_combo = (
         "VIX 5d spike >= 25%" in early_warning["active"]
         and "RSI falling from 70+" in early_warning["active"]
@@ -846,11 +857,15 @@ def build_early_warning_lines(early_warning):
         f"🔮 Early Drop Warnings — {mode}",
         meaning,
         action_note,
-        f"Level:         {early_warning['level']} ({early_warning['score']}/{early_warning['threshold']} active) — more active warnings means higher short-term drop risk.",
+        f"Level:         {early_warning['level']} ({early_warning['score']}/{check_count} active; High at {early_warning['threshold']}/{check_count}) — more active warnings means higher short-term drop risk.",
         f"Active:        {active}",
+        "Checks:",
+        *check_lines,
         f"Fast combo:    {fast_drop_note}",
         f"VIX:           {early_warning['vix']:.2f} ({early_warning['vix_ret5']:+.1%} over 5d) — rising VIX means fear/volatility is increasing.",
         f"QQQ vs EMA21:  ${early_warning['qqq_close']:.2f} / ${early_warning['qqq_ema21']:.2f} — QQQ below EMA21 means Nasdaq momentum is weakening.",
+        f"TQQQ vs SMA50: ${early_warning['tqqq_close']:.2f} / ${early_warning['tqqq_sma50']:.2f} — TQQQ below SMA50 means its own trend is weakening.",
+        f"RSI rollover:  {early_warning['prev_rsi14']:.1f} -> {early_warning['rsi14']:.1f} — active only when RSI was 70+ and is now falling.",
     ]
 
 

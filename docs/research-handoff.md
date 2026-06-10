@@ -136,3 +136,5 @@ Month-end comparison should treat this repo as the real source of truth. The rea
 As of the 2026-06-08 alignment pass, `real-stock-alert` uses its selected max-revenue stock setup for its bot-only benchmark and any future TQQQ-out stock bucket: RS63-heavy scoring, 8% ATR fresh-buy cap, two-week rank confirmation, and no fixed timeout. It should still show `$0.00` deployable real-stock cash while this TQQQ position is open.
 
 As of 2026-06-09, the `real-stock-alert` bot-only benchmark was reset to `$2,697.38` cash so month-end comparison starts the stock-bot paper path from the current tracked TQQQ-sized bucket estimate.
+
+As of 2026-06-10, `real-stock-alert` sends routine Telegram reports weekly only. Its opening/daily scheduled checks still run and save state/reports, but only send Telegram if a confirmed real stock position gets a sell alert.

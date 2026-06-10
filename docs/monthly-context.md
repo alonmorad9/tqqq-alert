@@ -86,6 +86,7 @@ Current alignment for month-end testing:
 - `tqqq-alert` remains the real master strategy.
 - `real-stock-alert` should have `$0.00` deployable real-stock cash while this TQQQ position is open, but its bot-only stock benchmark can keep running for comparison.
 - `real-stock-alert` now uses its selected max-revenue stock setup for the benchmark and future TQQQ-out stock bucket: RS63-heavy scoring, 8% ATR fresh-buy cap, two-week rank confirmation, and no fixed timeout.
+- `real-stock-alert` now sends routine Telegram reports weekly only. Its opening/daily checks still run and save state/reports, but they only alert Telegram if a confirmed real stock position gets a sell alert.
 - The real-stock bot-only benchmark was reset on 2026-06-09 to `$2,697.38` cash, matching the current tracked TQQQ-sized bucket estimate used for stock-benchmark comparison.
 - `swing-stock-alert` remains paused and should be used only as optional historical paper-demo context.
 

@@ -35,6 +35,8 @@ REENTRY_RSI_MAX = None
 ENTRY_QQQ_ADX_MIN = 25
 PARABOLIC_RET5_WARNING_PCT = 0.25
 PARABOLIC_RET10_WARNING_PCT = 0.30
+SUPPORT_BREAK_LOOKBACK = 30
+SUPPORT_BREAK_CONFIRM_CHECKS = 2
 
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -949,6 +951,86 @@ def build_early_warning_lines(early_warning):
     ]
 
 
+def calculate_support_break_watch(ticker):
+    if len(ticker) <= SUPPORT_BREAK_LOOKBACK + SUPPORT_BREAK_CONFIRM_CHECKS:
+        return {
+            "level": "Unavailable",
+            "support": None,
+            "near_support": None,
+            "current_price": float(ticker["Close"].iloc[-1]),
+            "confirm_count": 0,
+            "confirm_required": SUPPORT_BREAK_CONFIRM_CHECKS,
+            "lookback": SUPPORT_BREAK_LOOKBACK,
+            "hit": False,
+        }
+
+    current_price = float(ticker["Close"].iloc[-1])
+    prior_support = float(ticker["Low"].iloc[-SUPPORT_BREAK_LOOKBACK - 1:-1].min())
+    near_support_5d = float(ticker["Low"].iloc[-6:-1].min())
+    confirm_count = 0
+    for offset in range(SUPPORT_BREAK_CONFIRM_CHECKS):
+        end = len(ticker) - offset - 1
+        start = max(0, end - SUPPORT_BREAK_LOOKBACK)
+        support = float(ticker["Low"].iloc[start:end].min())
+        close = float(ticker["Close"].iloc[end])
+        if close < support:
+            confirm_count += 1
+        else:
+            break
+
+    if confirm_count >= SUPPORT_BREAK_CONFIRM_CHECKS:
+        level = "High"
+    elif confirm_count == 1:
+        level = "Watch"
+    else:
+        level = "Low"
+
+    return {
+        "level": level,
+        "support": prior_support,
+        "near_support": near_support_5d,
+        "current_price": current_price,
+        "confirm_count": confirm_count,
+        "confirm_required": SUPPORT_BREAK_CONFIRM_CHECKS,
+        "lookback": SUPPORT_BREAK_LOOKBACK,
+        "hit": confirm_count >= SUPPORT_BREAK_CONFIRM_CHECKS,
+    }
+
+
+def build_support_break_watch_lines(support_watch):
+    support = support_watch["support"]
+    if support is None:
+        support_text = "not enough data"
+        gap_text = "n/a"
+    else:
+        support_text = f"${support:.2f}"
+        gap = ((support - support_watch["current_price"]) / support_watch["current_price"]) * 100
+        gap_text = f"{gap:+.1f}% away"
+    near_support = support_watch.get("near_support")
+    if near_support is None:
+        near_support_text = "not enough data"
+    else:
+        near_gap = ((near_support - support_watch["current_price"]) / support_watch["current_price"]) * 100
+        near_support_text = f"${near_support:.2f} ({near_gap:+.1f}% away)"
+
+    if support_watch["hit"]:
+        action_note = "What to do: high-priority warning. It is not an automatic sell, but consider tightening broker/TradingView protection."
+    elif support_watch["confirm_count"] == 1:
+        action_note = "What to do: first support break detected. Watch closely; a second confirmed break would make this High."
+    else:
+        action_note = "What to do: no support-break pressure right now."
+
+    return [
+        "🧱 Support Break Watch — advisory warning",
+        f"Meaning: watches whether TQQQ breaks the prior {support_watch['lookback']}-period low. Broad testing showed this may help as a warning, but not enough to auto-sell.",
+        action_note,
+        f"Level:         {support_watch['level']} ({support_watch['confirm_count']}/{support_watch['confirm_required']} confirmed)",
+        f"Near Support:  {near_support_text} — short-term 5-day low, useful for awareness.",
+        f"Tested Level:  {support_text} ({gap_text}) — prior {support_watch['lookback']}-period low used by the researched warning.",
+        f"Price:         ${support_watch['current_price']:.2f}",
+    ]
+
+
 def calculate_parabolic_stretch(ticker):
     row = ticker.iloc[-1]
     ret5 = float(row["RET5"])
@@ -1028,6 +1110,7 @@ def update_bot_strategy_benchmark(ticker):
     )
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
+    support_watch = calculate_support_break_watch(ticker)
     sma_confirmation = calculate_sma200_confirmation(ticker)
     crossed_below_sma = sma_confirmation["crossed_below_confirmed"]
     crossed_above_sma = sma_confirmation["crossed_above_confirmed"]
@@ -1304,6 +1387,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
     )
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
+    support_watch = calculate_support_break_watch(ticker)
     position_value = shares * current_price
     cost_basis = shares * avg_cost
     total_value = cash + position_value
@@ -1763,6 +1847,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             *build_parabolic_warning_lines(ticker),
             "─" * 30,
             *build_early_warning_lines(early_warning),
+            "─" * 30,
+            *build_support_break_watch_lines(support_watch),
         ])
         if manual_exit_mode:
             lines.append(f"Current controller: manual safety mode; re-buy waits for pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or confirmed SMA200 reset; {format_reentry_rsi_rule()}.")
@@ -1832,6 +1918,14 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             lines.append(f"Manual mode rule: re-buy only after pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or confirmed SMA200 reset; {format_reentry_rsi_rule()}.")
         if waiting_for_early_reentry:
             lines.append(f"🔮 Early Re-buy: confirmed above SMA200 and SMA20; {format_reentry_rsi_rule()}")
+        if support_watch["support"] is not None:
+            near_support = support_watch.get("near_support")
+            near_text = f", near ${near_support:.2f}" if near_support is not None else ""
+            lines.append(
+                f"🧱 Support Watch: {support_watch['level']} "
+                f"({support_watch['confirm_count']}/{support_watch['confirm_required']}) "
+                f"tested ${support_watch['support']:.2f}{near_text}"
+            )
         if not position_open:
             lines.append(f"🧊 Re-entry RSI: {format_reentry_rsi_status(current_rsi, reentry_rsi_ok)}")
             lines.append("🅿️ Waiting Asset: Cash")

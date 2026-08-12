@@ -17,7 +17,8 @@ Selected production profile:
 - Anti-chop entry filter: `QQQ ADX14 >= 25`.
 - SMA200 confirmation: `3` confirmed checks/days.
 - Waiting asset: cash.
-- Early-warning/parabolic/fibonacci sections: advisory only.
+- Early-warning/parabolic/support-break/fibonacci sections: advisory only.
+- Support Break Watch uses the prior 30-period low and marks High at 2/2 confirmed breaks. Broad testing showed it can be useful context, but it is not currently promoted to an automatic sell rule.
 
 ## Why This Replaced The Old Strategy
 

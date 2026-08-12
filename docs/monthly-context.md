@@ -30,6 +30,7 @@ The goal is no longer long-term TQQQ holding or maximum theoretical return. The 
 | Anti-chop entry filter | QQQ ADX14 >= 25 |
 | Waiting asset | Cash only |
 | Early warnings | Advisory only |
+| Support break watch | Advisory only: shows 5-day near support plus prior 30-period tested support, High at 2/2 confirmed breaks |
 | Fibonacci / patterns | Research context only, not automatic |
 
 ## Backtest Summary
@@ -140,6 +141,7 @@ Important lines:
 - `Market Health`: context only.
 - `Parabolic Stretch`: context only.
 - `Early Drop Warnings`: context only.
+- `Support Break Watch`: context only; shows exact 5-day near support, prior-30 tested support, and whether the tested break is 0/2, 1/2, or 2/2 confirmed.
 - `Bot-Only Benchmark`: what would have happened with no manual overrides.
 
 ## Revival Checklist

@@ -93,6 +93,7 @@ Means: no action. Stay with the current state.
 - `Market Health`: advisory context only.
 - `Parabolic Stretch`: advisory context only.
 - `Early Drop Warnings`: advisory context only.
+- `Support Break Watch`: advisory warning for a break below the prior 30-period low. It also shows the 5-day near support for awareness. High means 2/2 confirmations; it does not auto-sell, but it is a prompt to consider manual broker/TradingView protection.
 - `Bot-Only Benchmark`: paper path with no manual overrides.
 
 ## Manual Sync

@@ -2002,6 +2002,23 @@ def send_telegram(message, reply_markup=None):
     response.raise_for_status()
 
 
+def send_post_sync_report(sync_label):
+    try:
+        check_strategy(daily_report=True, report_kind="sync", dedupe_report=False)
+    except Exception as exc:
+        fallback = (
+            f"✅ TQQQ {sync_label} was recorded.\n"
+            "Follow-up status report failed, but the sync itself is saved for GitHub to commit.\n"
+            f"Reason: {exc}"
+        )
+        try:
+            send_telegram(fallback)
+        except Exception as telegram_exc:
+            print(f"[POST SYNC REPORT FAILED] {sync_label}: {exc}; telegram fallback failed: {telegram_exc}")
+        else:
+            print(f"[POST SYNC REPORT FAILED] {sync_label}: {exc}")
+
+
 def parse_manual_price(mode="manual_sold"):
     raw_price = os.getenv("MANUAL_PRICE", "").strip()
     if not raw_price:
@@ -2069,21 +2086,27 @@ def mark_manual_sold():
     ]
     send_telegram("\n".join(lines))
     print(f"[MANUAL SOLD] Safety mode activated | Price: {manual_price:.2f} | Cash: {cash:.2f}")
+    send_post_sync_report("manual sell")
 
 
 def mark_manual_bought():
     manual_price = parse_manual_price("manual_bought")
     state = load_state()
     cash = float(state.get("cash", 0.0))
+    already_open = bool(state.get("position_open", False))
 
     raw_shares = os.getenv("MANUAL_SHARES", "").strip()
+    sync_note = "Recorded a new manual broker buy."
     if raw_shares:
         shares = float(raw_shares)
         if shares <= 0:
             raise RuntimeError("manual_shares must be greater than 0")
         spent = shares * manual_price
         remaining_cash = round(cash - spent, 2)
-        if remaining_cash < -0.01:
+        if already_open and remaining_cash < -0.01:
+            remaining_cash = max(round(cash, 2), 0.0)
+            sync_note = "Corrected the already-open tracked position to your exact broker fill."
+        elif remaining_cash < -0.01:
             raise RuntimeError(f"manual_shares implies spending ${spent:.2f} but only ${cash:.2f} tracked cash available")
     else:
         shares = cash / manual_price if cash > 0 else 0.0
@@ -2092,13 +2115,19 @@ def mark_manual_bought():
     if shares <= 0:
         raise RuntimeError("No tracked cash available to buy with — update position_state.json first")
 
+    existing_high = state.get("highest_high_since_entry")
+    if existing_high is not None:
+        highest_high_since_entry = max(float(existing_high), manual_price)
+    else:
+        highest_high_since_entry = manual_price
+
     state.update({
         "position_open": True,
         "shares": round(shares, 6),
         "avg_cost": round(manual_price, 4),
         "cash": remaining_cash,
         "entry_date": datetime.now(UTC).date().isoformat(),
-        "highest_high_since_entry": round(manual_price, 4),
+        "highest_high_since_entry": round(highest_high_since_entry, 4),
         "waiting_for_pullback": False,
         "waiting_for_early_reentry": False,
         "early_exit_price": None,
@@ -2120,6 +2149,7 @@ def mark_manual_bought():
     lines = [
         "\U0001f7e2 Manual Buy Recorded",
         "\u2500" * 30,
+        sync_note,
         f"Buy price:      ${manual_price:.2f}",
         f"Shares bought:  {shares:.4f}",
         f"Cash remaining: ${remaining_cash:.2f}",
@@ -2132,6 +2162,7 @@ def mark_manual_bought():
     ]
     send_telegram("\n".join(lines))
     print(f"[MANUAL BOUGHT] Position recorded | Price: {manual_price:.2f} | Shares: {shares:.4f}")
+    send_post_sync_report("manual buy")
 
 
 def mark_manual_cash_set():
@@ -2164,6 +2195,7 @@ def mark_manual_cash_set():
     ]
     send_telegram("\n".join(lines))
     print(f"[MANUAL CASH SET] Cash: {amount:.2f}")
+    send_post_sync_report("manual cash sync")
 
 
 def run_auto_mode():

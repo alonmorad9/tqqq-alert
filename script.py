@@ -17,8 +17,8 @@ TICKER = "TQQQ"
 STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
-TRAILING_STOP_PCT = 0.12
-HARD_STOP_PCT = 0.075
+TRAILING_STOP_PCT = 0.15
+HARD_STOP_PCT = 0.10
 FRESH_ENTRY_GUARD_PCT = HARD_STOP_PCT
 FRESH_ENTRY_GUARD_DAYS = "always"
 SWING_PROFIT_TARGET_PCT = 0.08
@@ -31,7 +31,8 @@ EARLY_WARNING_VIX_5D_SPIKE_PCT = 0.25
 EARLY_WARNING_RISK_THRESHOLD = 3
 AUTO_EARLY_WARNING_EXIT = False
 AUTO_PARABOLIC_EXIT = False
-REENTRY_RSI_MAX = 60
+REENTRY_RSI_MAX = None
+ENTRY_QQQ_ADX_MIN = 25
 PARABOLIC_RET5_WARNING_PCT = 0.25
 PARABOLIC_RET10_WARNING_PCT = 0.30
 
@@ -535,6 +536,7 @@ def fetch_market_data():
     ticker["RET10"] = ticker["Close"].pct_change(10)
     qqq["EMA21"] = qqq["Close"].ewm(span=21, adjust=False).mean()
     qqq["EMA50"] = qqq["Close"].ewm(span=50, adjust=False).mean()
+    qqq["ADX14"] = calculate_adx(qqq, 14)
     vix["RET5"] = vix["Close"].pct_change(5)
 
     prev_close = ticker["Close"].shift(1)
@@ -544,10 +546,10 @@ def fetch_market_data():
         (ticker["Low"] - prev_close).abs(),
     ], axis=1).max(axis=1)
     ticker["ATR14"] = true_range.rolling(window=14).mean()
-    qqq_signal = qqq[["Close", "EMA21", "EMA50"]].add_prefix("QQQ_")
+    qqq_signal = qqq[["Close", "EMA21", "EMA50", "ADX14"]].add_prefix("QQQ_")
     vix_signal = vix[["Close", "RET5"]].add_prefix("VIX_")
     ticker = ticker.join(qqq_signal, how="left").join(vix_signal, how="left").ffill()
-    ticker = ticker.dropna(subset=["SMA200", "SMA20", "SMA50", "RSI14", "RET5", "RET10", "QQQ_Close", "QQQ_EMA21", "VIX_Close", "VIX_RET5"])
+    ticker = ticker.dropna(subset=["SMA200", "SMA20", "SMA50", "RSI14", "RET5", "RET10", "QQQ_Close", "QQQ_EMA21", "QQQ_ADX14", "VIX_Close", "VIX_RET5"])
     ticker.attrs["price_source"] = live_source
     ticker.attrs["qqq_price_source"] = qqq_live_source
     ticker.attrs["vix_price_source"] = vix_live_source
@@ -560,6 +562,29 @@ def calculate_rsi(close, window):
     loss = (-delta.clip(upper=0)).rolling(window=window).mean()
     rs = gain / loss
     return 100 - (100 / (1 + rs))
+
+
+def calculate_adx(data, window=14):
+    import pandas as pd
+
+    high = data["High"]
+    low = data["Low"]
+    close = data["Close"]
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+    prev_close = close.shift(1)
+    true_range = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    atr = true_range.rolling(window=window).mean()
+    plus_di = 100 * plus_dm.rolling(window=window).mean() / atr
+    minus_di = 100 * minus_dm.rolling(window=window).mean() / atr
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+    return dx.rolling(window=window).mean()
 
 
 def money(value):
@@ -619,6 +644,25 @@ def format_reentry_rsi_rule():
     if REENTRY_RSI_MAX is None:
         return "RSI gate is off"
     return f"RSI <= {REENTRY_RSI_MAX}"
+
+
+def entry_adx_ready(qqq_adx):
+    return ENTRY_QQQ_ADX_MIN is None or float(qqq_adx) >= ENTRY_QQQ_ADX_MIN
+
+
+def format_entry_adx_status(qqq_adx, is_ready=None):
+    if ENTRY_QQQ_ADX_MIN is None:
+        return f"{qqq_adx:.1f} / gate off (ready)"
+    if is_ready is None:
+        is_ready = entry_adx_ready(qqq_adx)
+    status = "ready" if is_ready else "too choppy"
+    return f"{qqq_adx:.1f}/{ENTRY_QQQ_ADX_MIN} min ({status})"
+
+
+def format_entry_adx_rule():
+    if ENTRY_QQQ_ADX_MIN is None:
+        return "ADX gate is off"
+    return f"QQQ ADX >= {ENTRY_QQQ_ADX_MIN}"
 
 
 def build_reply_markup(action=None):
@@ -950,7 +994,9 @@ def update_bot_strategy_benchmark(ticker):
     sma200 = float(ticker["SMA200"].iloc[-1])
     current_date = ticker.index[-1].strftime("%Y-%m-%d")
     current_rsi = float(ticker["RSI14"].iloc[-1])
+    qqq_adx = float(ticker["QQQ_ADX14"].iloc[-1])
     reentry_rsi_ok = reentry_rsi_ready(current_rsi)
+    entry_adx_ok = entry_adx_ready(qqq_adx)
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
@@ -1012,13 +1058,14 @@ def update_bot_strategy_benchmark(ticker):
     )
     hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
     entry_open_delay_ok, entry_open_delay_reason = entry_open_delay_ready()
-    raw_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok
+    raw_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok and entry_adx_ok
     hit_rebuy_signal = raw_rebuy_signal and entry_open_delay_ok
     hit_early_reentry_signal = (
         waiting_for_early_reentry
         and above_sma
         and current_price > float(ticker["SMA20"].iloc[-1])
         and reentry_rsi_ok
+        and entry_adx_ok
         and entry_open_delay_ok
     )
     fresh_guard_cooldown = (
@@ -1038,6 +1085,7 @@ def update_bot_strategy_benchmark(ticker):
         and not waiting_for_pullback
         and not waiting_for_early_reentry
         and reentry_rsi_ok
+        and entry_adx_ok
     )
 
     if position_open and (hit_fresh_entry_guard or hit_trailing_stop or crossed_below_sma):
@@ -1203,6 +1251,8 @@ def update_bot_strategy_benchmark(ticker):
         "early_warning": early_warning,
         "fresh_entry_guard": fresh_entry_guard,
         "reentry_rsi_ok": reentry_rsi_ok,
+        "entry_adx_ok": entry_adx_ok,
+        "qqq_adx": qqq_adx,
         "entry_open_delay_ok": entry_open_delay_ok,
         "entry_open_delay_reason": entry_open_delay_reason,
     }
@@ -1217,7 +1267,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
     current_high = float(ticker["High"].iloc[-1])
     sma200 = float(ticker["SMA200"].iloc[-1])
     current_rsi = float(ticker["RSI14"].iloc[-1])
+    qqq_adx = float(ticker["QQQ_ADX14"].iloc[-1])
     reentry_rsi_ok = reentry_rsi_ready(current_rsi)
+    entry_adx_ok = entry_adx_ready(qqq_adx)
     sma_confirmation = calculate_sma200_confirmation(ticker)
 
     position_open = bool(state["position_open"])
@@ -1294,7 +1346,12 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
     )
     hit_rebuy_timeout = waiting_for_pullback and pullback_wait_days >= SWING_REBUY_TIMEOUT_DAYS
     entry_open_delay_ok, entry_open_delay_reason = entry_open_delay_ready()
-    raw_swing_rebuy_signal = (hit_rebuy_pullback or hit_rebuy_timeout) and above_sma and reentry_rsi_ok
+    raw_swing_rebuy_signal = (
+        (hit_rebuy_pullback or hit_rebuy_timeout)
+        and above_sma
+        and reentry_rsi_ok
+        and entry_adx_ok
+    )
     hit_rebuy_signal = raw_swing_rebuy_signal and entry_open_delay_ok
     hit_manual_rebuy_pullback = (
         manual_exit_mode
@@ -1305,12 +1362,13 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
     hit_manual_rebuy_timeout = manual_exit_mode and manual_wait_days >= MANUAL_REBUY_TIMEOUT_DAYS and above_sma
     hit_manual_rebuy_signal = (
         hit_manual_rebuy_pullback or hit_manual_rebuy_reset or hit_manual_rebuy_timeout
-    ) and above_sma and reentry_rsi_ok and entry_open_delay_ok
+    ) and above_sma and reentry_rsi_ok and entry_adx_ok and entry_open_delay_ok
     hit_early_reentry_signal = (
         waiting_for_early_reentry
         and above_sma
         and current_price > float(ticker["SMA20"].iloc[-1])
         and reentry_rsi_ok
+        and entry_adx_ok
         and entry_open_delay_ok
     )
     current_date = ticker.index[-1].strftime("%Y-%m-%d")
@@ -1332,6 +1390,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         and not waiting_for_early_reentry
         and not manual_exit_mode
         and reentry_rsi_ok
+        and entry_adx_ok
     )
 
     raw_reentry_trigger = (
@@ -1574,6 +1633,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         action = "✅ HOLD — Above SMA200, stop intact"
     elif raw_reentry_trigger and not reentry_rsi_ok:
         action = f"⏳ WAIT — Re-entry blocked until {format_reentry_rsi_rule()}"
+    elif raw_reentry_trigger and not entry_adx_ok:
+        action = f"⏳ WAIT — Re-entry blocked until {format_entry_adx_rule()}"
     elif raw_reentry_trigger and not entry_open_delay_ok:
         action = "⏳ WAIT — Entry delayed after market open"
         instruction_lines.append(
@@ -1597,13 +1658,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         elif manual_exit_mode:
             wait_reason = (
                 f"Manual safety mode is active. Re-buy needs a {SWING_REBUY_DROP_PCT * 100:.0f}% pullback, "
-                f"{MANUAL_REBUY_TIMEOUT_DAYS} trading days, or SMA reset, plus {format_reentry_rsi_rule()}."
+                f"{MANUAL_REBUY_TIMEOUT_DAYS} trading days, or SMA reset, plus {format_reentry_rsi_rule()} and {format_entry_adx_rule()}."
             )
         elif waiting_for_pullback:
             if not above_sma:
                 wait_reason = f"Waiting for trend confirmation: SMA200 confirmation is only {format_sma_confirmation(sma_confirmation)}."
             elif not reentry_rsi_ok:
                 wait_reason = f"Re-entry setup is waiting because RSI is {current_rsi:.1f}, above the {REENTRY_RSI_MAX} cap."
+            elif not entry_adx_ok:
+                wait_reason = f"Re-entry setup exists, but QQQ ADX is {qqq_adx:.1f}; the bot waits for {format_entry_adx_rule()} to avoid choppy-market whipsaws."
             elif not (hit_rebuy_pullback or hit_rebuy_timeout):
                 wait_reason = (
                     f"Waiting for either a {SWING_REBUY_DROP_PCT * 100:.0f}% pullback from the last sell "
@@ -1612,13 +1675,15 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             else:
                 wait_reason = "Re-entry setup exists, but the market-open delay is still blocking the buy."
         elif waiting_for_early_reentry:
-            wait_reason = f"Waiting for recovery above SMA200 and SMA20, plus {format_reentry_rsi_rule()}."
+            wait_reason = f"Waiting for recovery above SMA200 and SMA20, plus {format_reentry_rsi_rule()} and {format_entry_adx_rule()}."
         elif not above_sma:
             wait_reason = f"Trend is not confirmed yet: SMA200 confirmation is {format_sma_confirmation(sma_confirmation)}."
         elif not fresh_entry_setup:
             wait_reason = f"Trend is bullish, but the fresh-entry trigger is not complete yet: price must be above SMA20 (${sma20:.2f}) or get a new SMA200 confirmation."
         elif not reentry_rsi_ok:
             wait_reason = f"Trend is bullish, but RSI is {current_rsi:.1f}; the bot waits until RSI <= {REENTRY_RSI_MAX} before buying."
+        elif not entry_adx_ok:
+            wait_reason = f"Trend is bullish, but QQQ ADX is {qqq_adx:.1f}; the bot waits for {format_entry_adx_rule()} so it avoids weak/choppy trends."
         elif not entry_open_delay_ok:
             wait_reason = f"{entry_open_delay_reason}. This avoids buying into unstable opening moves."
         elif cash <= 0:
@@ -1708,7 +1773,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         f"-{HARD_STOP_PCT * 100:.1f}% hard stop, "
         f"{TRAILING_STOP_PCT * 100:.0f}% trail, "
         f"-{SWING_REBUY_DROP_PCT * 100:.0f}%/{SWING_REBUY_TIMEOUT_DAYS}d re-entry, "
-        f"{format_reentry_rsi_rule()}"
+        f"{format_reentry_rsi_rule()}, "
+        f"{format_entry_adx_rule()}"
     )
     benchmark_lines = [
         "🧪 Bot-Only Benchmark",
@@ -1733,6 +1799,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
         benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
         benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
+        benchmark_lines.append(f"ADX Gate:      {format_entry_adx_status(bot_strategy.get('qqq_adx', qqq_adx), bot_strategy.get('entry_adx_ok'))}")
         benchmark_lines.append(f"Open Delay:    {benchmark_open_delay_status} — no bot buys in first {ENTRY_OPEN_DELAY_MINUTES} market minutes.")
         if REENTRY_RSI_MAX is None:
             benchmark_lines.append("Rule now: benchmark waits for pullback or timeout; RSI is not blocking re-entry.")
@@ -1740,6 +1807,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             benchmark_lines.append("Rule now: benchmark waits for pullback or timeout, and still needs RSI to be ready.")
     elif bot_strategy.get("waiting_for_early_reentry"):
         benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
+        benchmark_lines.append(f"ADX Gate:      {format_entry_adx_status(bot_strategy.get('qqq_adx', qqq_adx), bot_strategy.get('entry_adx_ok'))}")
         if REENTRY_RSI_MAX is None:
             benchmark_lines.append(f"Rule now: benchmark waits for confirmed recovery above SMA200 and SMA20; RSI is not blocking re-entry.")
         else:
@@ -1748,6 +1816,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         benchmark_lines.append("Rule now: benchmark is in cash after a hard-stop exit and waits for normal re-entry rules.")
     else:
         benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
+        benchmark_lines.append(f"ADX Gate:      {format_entry_adx_status(bot_strategy.get('qqq_adx', qqq_adx), bot_strategy.get('entry_adx_ok'))}")
         benchmark_lines.append("Rule now: benchmark waits for a fresh TQQQ entry signal.")
     benchmark_lines.append(f"Vs Real Path:   ${strategy_gap:+.2f} ({strategy_gap_pct:+.2f}%)")
 
@@ -1814,6 +1883,8 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             )
         if not position_open:
             lines.append(f"🧊 Re-entry RSI: {format_reentry_rsi_status(current_rsi, reentry_rsi_ok)}")
+            lines.append(f"📐 QQQ ADX Gate: {format_entry_adx_status(qqq_adx, entry_adx_ok)}")
+            lines.append("   Meaning: ADX measures Nasdaq trend strength. If it is too low, the market is likely choppy, so the bot waits.")
             if cash > 0:
                 lines.append("🅿️ Waiting Asset: Cash")
                 lines.append("   Plan: stay in cash until the next TQQQ buy/re-buy signal.")

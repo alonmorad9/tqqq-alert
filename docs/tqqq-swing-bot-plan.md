@@ -21,12 +21,13 @@ The core idea is simple:
 | Asset | TQQQ only |
 | Trend filter | TQQQ and QQQ above SMA200 |
 | Confirmation | 3 confirmed checks/days |
-| Entry RSI | RSI14 <= 60 |
+| Anti-chop entry filter | QQQ ADX14 >= 25 |
+| Entry RSI | Off |
 | Profit exit | Sell all at +8% from entry |
-| Hard stop | Sell all at -7.5% from entry |
-| Trailing stop | Sell all at -12% from highest high since entry |
+| Hard stop | Sell all at -10% from entry |
+| Trailing stop | Sell all at -15% from highest high since entry |
 | Re-entry after sell | Buy after -3% from sell price or 3 trading days |
-| Manual sell recovery | Same: -3% or 3 trading days, with RSI/trend filters |
+| Manual sell recovery | Same: -3% or 3 trading days, with trend and ADX filters |
 | Waiting asset | Cash |
 
 ## Example Trade
@@ -34,11 +35,11 @@ The core idea is simple:
 If TQQQ buy signal is at `$100`:
 
 - Profit target: `$108`.
-- Hard stop: `$92.50`.
-- Initial trailing stop: about `$88`, based on the highest high since entry.
-- If TQQQ rises to `$106`, trailing stop rises to `$93.28`.
+- Hard stop: `$90`.
+- Initial trailing stop: about `$85`, based on the highest high since entry.
+- If TQQQ rises to `$106`, trailing stop rises to `$90.10`.
 - If TQQQ rises to `$108`, bot sends `SELL ALL`.
-- After sell at `$108`, re-buy target is `$104.76`, or 3 trading days later if the trend and RSI filters still allow it.
+- After sell at `$108`, re-buy target is `$104.76`, or 3 trading days later if the trend and ADX filters still allow it.
 
 ## What The Bot Does Automatically
 
@@ -55,7 +56,7 @@ You should either:
 
 ### BUY SIGNAL
 
-Means: bot believes the trend and RSI filters allow a new TQQQ swing.
+Means: bot believes the trend and QQQ ADX filters allow a new TQQQ swing.
 
 What to do:
 
@@ -82,11 +83,12 @@ Means: no action. Stay with the current state.
 - `Price`: latest TQQQ price used by the bot.
 - `SMA200`: long-term trend line.
 - `SMA Confirm`: confirmation count for trend entries/exits.
-- `Trail Stop`: 12% below highest high since entry.
-- `Hard Stop`: 7.5% below average cost.
+- `Trail Stop`: 15% below highest high since entry.
+- `Hard Stop`: 10% below average cost.
 - `Next Profit`: +8% target.
 - `Re-buy`: 3% below last sell price.
-- `Re-entry RSI`: RSI must be <= 60 before buying.
+- `Re-entry RSI`: RSI gate is off in the current optimized version.
+- `QQQ ADX Gate`: QQQ ADX must be >= 25 before buying; this is the anti-chop filter.
 - `Market Health`: advisory context only.
 - `Parabolic Stretch`: advisory context only.
 - `Early Drop Warnings`: advisory context only.
@@ -144,3 +146,14 @@ Telegram inline buttons cannot enter an exact custom broker price by themselves.
 ## Important Risk Note
 
 TQQQ is a 3x leveraged ETF. A better bot does not make it safe. This strategy reduced drawdown in the historical test versus wider trailing approaches, but losses can still be fast and uncomfortable.
+
+## Latest Robustness Update
+
+On 2026-08-12, the strategy was retested against the recent choppy two-month window and full-history daily data. The best robust update was:
+
+- Keep +8% profit taking.
+- Use a wider -10% hard stop and 15% trailing stop.
+- Remove the RSI entry cap.
+- Add QQQ ADX14 >= 25 as a real entry/re-entry gate.
+
+This won the recent two-month intraday-style test while also improving the full-history result versus the prior live rules. The purpose of ADX is to avoid repeated small stop-outs when Nasdaq is above SMA200 but not trending strongly.

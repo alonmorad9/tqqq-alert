@@ -9,11 +9,12 @@ The repo has been converted back to a clean **TQQQ-only swing alert bot**.
 Selected production profile:
 
 - Profit target: `+8%`.
-- Hard stop: `-7.5%` from entry.
-- Trailing stop: `-12%` from highest high since entry.
+- Hard stop: `-10%` from entry.
+- Trailing stop: `-15%` from highest high since entry.
 - Re-entry: `-3%` from last sell price or `3` trading days.
 - Manual-sell timeout: `3` trading days.
-- RSI entry cap: `RSI14 <= 60`.
+- RSI entry cap: off.
+- Anti-chop entry filter: `QQQ ADX14 >= 25`.
 - SMA200 confirmation: `3` confirmed checks/days.
 - Waiting asset: cash.
 - Early-warning/parabolic/fibonacci sections: advisory only.
@@ -31,37 +32,40 @@ That produced attractive theoretical returns in some broad grids, but it did not
 
 ## Backtest Result
 
-Selected swing setup on `$1,000`:
+Previous swing setup on `$1,000`:
 
-- Final: `$70,718`.
-- Multiple: `70.7x`.
-- CAGR: `33.6%`.
-- Max drawdown: `-28.6%`.
-- Win rate: `60.6%`.
-- Trades: `360`.
-- Exits: `180`.
+- Multiple: `71.2x`.
+- CAGR: `31.2%`.
+- Max drawdown: `-34.7%`.
+- Win rate: `59.4%`.
+- Trades: `395`.
 
-Exit mix:
+Latest robust candidate after choppy-market retest:
 
-- Profit exits: `109`.
-- Hard stops: `45`.
-- Trailing stops: `22`.
-- SMA200 exits: `4`.
+- Rules: `+8%` profit, `-10%` hard stop, `15%` trail, no RSI cap, `QQQ ADX14 >= 25`.
+- Full-history multiple: `233.1x`.
+- Full-history CAGR: `41.5%`.
+- Full-history max drawdown: `-35.4%`.
+- Full-history win rate: `72.0%`.
+- Recent two-month intraday-style result: `+20.9%` versus `-19.4%` for the prior live rules.
+- Recent two-month max drawdown: `-18.7%` versus `-28.7%` for the prior live rules.
 
-Key comparisons:
+Walk-forward sanity check:
 
-- A `10%` profit target made less money and had deeper drawdown.
-- A `6%` profit target churned too much and made less money.
-- A `15%` trailing stop made less money and had worse drawdown.
-- A `5%` hard stop created too many whipsaws.
-- RSI <= 65 allowed too many hot re-entries compared with RSI <= 60.
+- `2011-2014`: candidate `2.90x`, prior live `1.97x`.
+- `2015-2018`: candidate `3.47x`, prior live `2.35x`.
+- `2019-2022`: candidate `4.67x`, prior live `3.39x`.
+- `2023-now`: candidate `5.52x`, prior live `3.37x`.
+- `2025-now`: candidate `1.99x`, prior live `1.43x`.
+
+Interpretation: `QQQ ADX >= 25` is not just a recent overfit in this test set. It avoided recent chop and improved all broad walk-forward periods tested. It should still be treated as aggressive because TQQQ itself remains a 3x leveraged ETF.
 
 ## Implementation Notes
 
 The legacy `fresh_entry_guard` function name remains in code for compatibility, but its behavior is now the permanent hard stop:
 
 - `active`: while position is open.
-- `stop`: `avg_cost * 0.925`.
+- `stop`: `avg_cost * 0.90`.
 - `hit`: current price <= stop.
 
 Do not reintroduce the old first-two-days guard unless a new backtest proves it.
@@ -70,7 +74,7 @@ All normal exits, including hard stop, trailing stop, and SMA200 exit, now enter
 
 - Store `last_profit_sell_price`.
 - Set `waiting_for_pullback = true`.
-- Wait for 3% pullback or 3 trading days, with trend and RSI gates.
+- Wait for 3% pullback or 3 trading days, with trend and ADX gates.
 
 ## Operational Notes
 

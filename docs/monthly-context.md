@@ -21,12 +21,13 @@ The goal is no longer long-term TQQQ holding or maximum theoretical return. The 
 | Trend filter | TQQQ and QQQ must be above SMA200 |
 | SMA confirmation | 3 confirmed checks/days |
 | Profit target | Sell all at +8% from entry |
-| Hard stop | Sell all at -7.5% from entry |
-| Trailing stop | Sell all at -12% from highest high since entry |
+| Hard stop | Sell all at -10% from entry |
+| Trailing stop | Sell all at -15% from highest high since entry |
 | Re-buy pullback | Buy after -3% from last sell price |
 | Re-buy timeout | 3 trading days |
 | Manual sell timeout | 3 trading days |
-| Re-entry RSI cap | RSI14 <= 60 |
+| Re-entry RSI cap | Off |
+| Anti-chop entry filter | QQQ ADX14 >= 25 |
 | Waiting asset | Cash only |
 | Early warnings | Advisory only |
 | Fibonacci / patterns | Research context only, not automatic |
@@ -37,7 +38,8 @@ Historical test from TQQQ inception using daily data:
 
 | Strategy | Final On $1,000 | CAGR | Max DD | Win Rate | Trades |
 |---|---:|---:|---:|---:|---:|
-| Selected swing strategy | `$70,718` | `33.6%` | `-28.6%` | `60.6%` | `360` |
+| Prior swing strategy | `71.2x` | `31.2%` | `-34.7%` | `59.4%` | `395` |
+| Current ADX anti-chop strategy | `233.1x` | `41.5%` | `-35.4%` | `72.0%` | `329` |
 | 10% profit variant | `$51,995` | lower | `-37.8%` | lower | similar |
 | 6% profit variant | `$30,369` | lower | `-36.7%` | lower | more churn |
 | 15% trail variant | `$52,695` | lower | `-33.1%` | lower | similar |
@@ -51,7 +53,7 @@ Exit reasons in the selected test:
 - `trail_stop`: 22 exits.
 - `sma200_exit`: 4 exits.
 
-Interpretation: this is still aggressive, but it behaves much more like a swing system than the old 25% trailing/large-profit setup.
+Interpretation: this is still aggressive, but it behaves much more like a swing system than the old 25% trailing/large-profit setup. The latest ADX version specifically tries to avoid repeated losses in choppy Nasdaq markets.
 
 ## How The Trade Works
 
@@ -60,7 +62,7 @@ Interpretation: this is still aggressive, but it behaves much more like a swing 
 The bot waits for:
 
 - Trend confirmed above SMA200.
-- Re-entry RSI ready: `RSI14 <= 60`.
+- Nasdaq trend strength ready: `QQQ ADX14 >= 25`.
 - If after a prior sell: either price drops 3% from the sell price, or 3 trading days pass.
 - No bot buy during the first 30 minutes after market open.
 
@@ -71,8 +73,8 @@ When ready, Telegram sends a `BUY SIGNAL` or `RE-BUY SIGNAL`.
 The bot watches:
 
 - `+8%` profit target.
-- `-7.5%` hard stop from entry.
-- `-12%` trailing stop from highest high since entry.
+- `-10%` hard stop from entry.
+- `-15%` trailing stop from highest high since entry.
 - Confirmed SMA200 weakness.
 
 If any real exit rule is hit, Telegram sends a `SELL NOW` message and the bot state moves to cash.
@@ -83,7 +85,7 @@ The bot waits in cash for the next re-entry:
 
 - Price down 3% from sell price, or
 - 3 trading days pass,
-- and trend/RSI filters allow the buy.
+- and trend/ADX filters allow the buy.
 
 ## Manual Workflow
 
@@ -127,11 +129,12 @@ Important lines:
 - `Price`: latest TQQQ price used by the bot.
 - `SMA200`: long-term trend filter.
 - `SMA Confirm`: how many consecutive checks/days confirm above or below SMA200.
-- `Trail Stop`: current 12% trailing stop from the highest high since entry.
-- `Hard Stop`: permanent 7.5% stop from entry.
+- `Trail Stop`: current 15% trailing stop from the highest high since entry.
+- `Hard Stop`: permanent 10% stop from entry.
 - `Next Profit`: +8% target from average cost.
 - `Re-buy`: 3% pullback target from last sell.
-- `Re-entry RSI`: whether RSI is cool enough to buy.
+- `Re-entry RSI`: off in the current optimized version.
+- `QQQ ADX Gate`: anti-chop rule; QQQ ADX must be >= 25 before buying.
 - `Market Health`: context only.
 - `Parabolic Stretch`: context only.
 - `Early Drop Warnings`: context only.

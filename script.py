@@ -712,6 +712,15 @@ def clear_fresh_entry_guard_exit_fields():
     }
 
 
+def is_clean_cash_action(action):
+    return action in {
+        None,
+        "manual_cash_set",
+        "swing_strategy_reset_cash",
+        "benchmark_swing_strategy_reset_cash",
+    }
+
+
 def calculate_early_warning(ticker):
     row = ticker.iloc[-1]
     prev = ticker.iloc[-2]
@@ -988,9 +997,20 @@ def update_bot_strategy_benchmark(ticker):
         state.get("last_action") == "benchmark_sell_fresh_entry_guard"
         and state.get("fresh_entry_guard_exit_date") == current_date
     )
+    sma20 = float(ticker["SMA20"].iloc[-1])
+    fresh_entry_setup = crossed_above_sma or (
+        is_clean_cash_action(state.get("last_action"))
+        and above_sma
+        and current_price > sma20
+    )
     hit_fresh_buy_signal = (
-        crossed_above_sma or (not state.get("last_action") and above_sma)
-    ) and entry_open_delay_ok and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and reentry_rsi_ok
+        fresh_entry_setup
+        and entry_open_delay_ok
+        and not fresh_guard_cooldown
+        and not waiting_for_pullback
+        and not waiting_for_early_reentry
+        and reentry_rsi_ok
+    )
 
     if position_open and (hit_fresh_entry_guard or hit_trailing_stop or crossed_below_sma):
         cash += shares * current_price
@@ -1270,16 +1290,28 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         state.get("last_action") == "sell_all_fresh_entry_guard"
         and state.get("fresh_entry_guard_exit_date") == current_date
     )
+    sma20 = float(ticker["SMA20"].iloc[-1])
+    fresh_entry_setup = crossed_above_sma or (
+        is_clean_cash_action(state.get("last_action"))
+        and above_sma
+        and current_price > sma20
+    )
     hit_fresh_buy_signal = (
-        crossed_above_sma or (not state.get("last_action") and above_sma and current_price > float(ticker["SMA20"].iloc[-1]))
-    ) and entry_open_delay_ok and not fresh_guard_cooldown and not waiting_for_pullback and not waiting_for_early_reentry and not manual_exit_mode and reentry_rsi_ok
+        fresh_entry_setup
+        and entry_open_delay_ok
+        and not fresh_guard_cooldown
+        and not waiting_for_pullback
+        and not waiting_for_early_reentry
+        and not manual_exit_mode
+        and reentry_rsi_ok
+    )
 
     raw_reentry_trigger = (
         ((hit_rebuy_pullback or hit_rebuy_timeout) and above_sma)
         or ((hit_manual_rebuy_pullback or hit_manual_rebuy_reset or hit_manual_rebuy_timeout) and above_sma)
         or (waiting_for_early_reentry and above_sma and current_price > float(ticker["SMA20"].iloc[-1]))
         or (
-            (crossed_above_sma or (not state.get("last_action") and above_sma and current_price > float(ticker["SMA20"].iloc[-1])))
+            fresh_entry_setup
             and not fresh_guard_cooldown
             and not waiting_for_pullback
             and not waiting_for_early_reentry
@@ -1530,6 +1562,42 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     else:
         action = "⏸️ WAIT — No open position" if not position_open else "⚠️ CAUTION — Price near stop level"
 
+    wait_reason = None
+    if action and "WAIT" in action:
+        if position_open:
+            wait_reason = "You are already in TQQQ; no exit rule is active right now."
+        elif manual_exit_mode:
+            wait_reason = (
+                f"Manual safety mode is active. Re-buy needs a {SWING_REBUY_DROP_PCT * 100:.0f}% pullback, "
+                f"{MANUAL_REBUY_TIMEOUT_DAYS} trading days, or SMA reset, plus {format_reentry_rsi_rule()}."
+            )
+        elif waiting_for_pullback:
+            if not above_sma:
+                wait_reason = f"Waiting for trend confirmation: SMA200 confirmation is only {format_sma_confirmation(sma_confirmation)}."
+            elif not reentry_rsi_ok:
+                wait_reason = f"Re-entry setup is waiting because RSI is {current_rsi:.1f}, above the {REENTRY_RSI_MAX} cap."
+            elif not (hit_rebuy_pullback or hit_rebuy_timeout):
+                wait_reason = (
+                    f"Waiting for either a {SWING_REBUY_DROP_PCT * 100:.0f}% pullback from the last sell "
+                    f"or {SWING_REBUY_TIMEOUT_DAYS} trading days."
+                )
+            else:
+                wait_reason = "Re-entry setup exists, but the market-open delay is still blocking the buy."
+        elif waiting_for_early_reentry:
+            wait_reason = f"Waiting for recovery above SMA200 and SMA20, plus {format_reentry_rsi_rule()}."
+        elif not above_sma:
+            wait_reason = f"Trend is not confirmed yet: SMA200 confirmation is {format_sma_confirmation(sma_confirmation)}."
+        elif not fresh_entry_setup:
+            wait_reason = f"Trend is bullish, but the fresh-entry trigger is not complete yet: price must be above SMA20 (${sma20:.2f}) or get a new SMA200 confirmation."
+        elif not reentry_rsi_ok:
+            wait_reason = f"Trend is bullish, but RSI is {current_rsi:.1f}; the bot waits until RSI <= {REENTRY_RSI_MAX} before buying."
+        elif not entry_open_delay_ok:
+            wait_reason = f"{entry_open_delay_reason}. This avoids buying into unstable opening moves."
+        elif cash <= 0:
+            wait_reason = "No tracked cash is available. Run manual_cash_set if you added cash in the broker."
+        else:
+            wait_reason = "No buy rule is complete yet."
+
     if state_changed:
         state_dirty = True
 
@@ -1672,6 +1740,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"📊 TQQQ {report_title} — {date_str}",
             "─" * 30,
             f"Action: {action}",
+            *( [f"Why: {wait_reason}"] if wait_reason else [] ),
             "Read first: follow the Action line. The risk sections below explain context unless they explicitly create the Action.",
             *instruction_lines,
             "─" * 30,
@@ -1762,6 +1831,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         lines = [
             "─" * 30,
             action,
+            *( [f"Why: {wait_reason}"] if wait_reason else [] ),
             "Read first: follow this Action. Extra risk notes are context only unless this is a SELL/BUY signal.",
             *instruction_lines,
             "─" * 30,

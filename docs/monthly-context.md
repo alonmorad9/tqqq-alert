@@ -109,12 +109,14 @@ Signal buttons are acknowledgements/helpers only. The bot does not wait for a bu
 
 Standard buttons:
 
-- `Daily report`: queues a full report.
-- `Check now`: queues a signal-only check.
+- `Daily report`: queues a full status report now, even if there is no buy/sell signal.
+- `Check now`: queues a signal-only check. It sends a bot alert only if BUY/SELL/state-change is active.
 - `Cash sync help`: shows `/cash AMOUNT`.
 - `Button help`: explains the buttons.
 
-Exact broker fills still require a short command because Telegram buttons cannot collect arbitrary prices.
+Weekly report is not active in this TQQQ swing bot. The active schedule is opening/closing full reports plus 10-minute signal checks.
+
+Exact broker fills still require a short command because Telegram buttons cannot collect arbitrary prices. Help buttons send persistent Telegram messages with the exact command format.
 
 ## Telegram Message Meaning
 

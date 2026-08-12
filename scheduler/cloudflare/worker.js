@@ -156,6 +156,7 @@ async function handleTelegramUpdate(update, env) {
   if (update.callback_query) {
     const callback = update.callback_query;
     const data = callback.data || "";
+    const chatId = callback.message?.chat?.id;
     if (data === "confirm_buy") {
       await answerCallback(env, callback.id, "Confirmed. Bot already tracks the buy at its signal price.");
       return new Response("ok\n");
@@ -165,29 +166,49 @@ async function handleTelegramUpdate(update, env) {
       return new Response("ok\n");
     }
     if (data === "help_bought") {
-      await answerCallback(env, callback.id, "Send: /bought PRICE SHARES");
+      await answerCallback(env, callback.id, "Sent exact buy-fill help.");
+      await sendTelegram(env, chatId, "To sync an exact broker buy, send:\n/bought PRICE SHARES\n\nExample:\n/bought 75.30 13.2802");
       return new Response("ok\n");
     }
     if (data === "help_sold") {
-      await answerCallback(env, callback.id, "Send: /sold PRICE");
+      await answerCallback(env, callback.id, "Sent exact sell-fill help.");
+      await sendTelegram(env, chatId, "To sync an exact broker sell, send:\n/sold PRICE\n\nExample:\n/sold 82.10");
       return new Response("ok\n");
     }
     if (data === "help_cash") {
-      await answerCallback(env, callback.id, "Send: /cash AMOUNT, for example /cash 1000");
+      await answerCallback(env, callback.id, "Sent cash sync help.");
+      await sendTelegram(env, chatId, "To sync the TQQQ cash bucket, send:\n/cash AMOUNT\n\nExample:\n/cash 1000");
       return new Response("ok\n");
     }
     if (data === "help_buttons") {
-      await answerCallback(env, callback.id, "Daily/Check run the bot. Confirm buttons only acknowledge bot-price fills. Different-fill buttons show exact sync commands.");
+      await answerCallback(env, callback.id, "Sent button help.");
+      await sendTelegram(
+        env,
+        chatId,
+        [
+          "Button help:",
+          "",
+          "📊 Daily report: sends a full status report now, even if there is no buy/sell signal.",
+          "🔎 Check now: runs a signal-only check. It sends a TQQQ bot message only if BUY/SELL/state-change happens.",
+          "✅ Bought/Sold at bot price: acknowledgement only. The bot already updated itself at the signal price.",
+          "✏️ Different fill: shows the command to sync your exact broker price.",
+          "💵 Cash sync help: shows how to update tracked cash.",
+          "",
+          "Weekly report: not active in this TQQQ swing bot right now. This bot uses opening/closing full reports plus 10-minute signal checks.",
+        ].join("\n")
+      );
       return new Response("ok\n");
     }
     if (data === "run_daily") {
       await triggerWorkflow(env, { mode: "daily" });
       await answerCallback(env, callback.id, "Queued daily report.");
+      await sendTelegram(env, chatId, "Queued 📊 Daily report. It should arrive after GitHub Actions finishes.");
       return new Response("queued\n");
     }
     if (data === "run_check") {
       await triggerWorkflow(env, { mode: "check" });
       await answerCallback(env, callback.id, "Queued signal check.");
+      await sendTelegram(env, chatId, "Queued 🔎 Check now. This only sends a bot alert if a BUY/SELL/state-change signal is active.");
       return new Response("queued\n");
     }
   }

@@ -110,6 +110,12 @@ You can also sync directly from Telegram after the Cloudflare webhook is configu
 - `/daily` queues a full report.
 - `/check` queues a signal check.
 
+Report types:
+
+- `Daily report`: full status report right now. It explains current state, why WAIT/HOLD/BUY/SELL, account value, risk context, and benchmark.
+- `Check now`: signal-only run. It checks the strategy now, but only sends a bot alert if there is an actionable BUY/SELL/state-change signal.
+- Weekly report: not active in this TQQQ swing bot. The active schedule is opening/closing full reports plus 10-minute signal checks.
+
 Signal messages include buttons:
 
 - `Bought at bot price`: acknowledgement only. The bot already tracked the buy when it sent the signal.
@@ -121,7 +127,7 @@ Signal messages include buttons:
 - `Cash sync help`: shows `/cash AMOUNT`.
 - `Button help`: explains what each button does.
 
-Telegram inline buttons cannot enter an exact custom broker price by themselves. For exact fills, use `/bought PRICE SHARES` or `/sold PRICE`.
+Telegram inline buttons cannot enter an exact custom broker price by themselves. Help buttons send persistent chat messages with examples. For exact fills, use `/bought PRICE SHARES` or `/sold PRICE`.
 
 ## Revival Steps
 

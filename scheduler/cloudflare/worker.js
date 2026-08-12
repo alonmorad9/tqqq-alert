@@ -130,6 +130,28 @@ async function answerCallback(env, callbackQueryId, text) {
   });
 }
 
+async function setTelegramWebhook(env, requestUrl) {
+  if (!env.TELEGRAM_TOKEN) {
+    return new Response("Missing Cloudflare secret TELEGRAM_TOKEN.\n", { status: 500 });
+  }
+
+  const url = new URL(requestUrl);
+  url.pathname = "/";
+  url.search = "";
+
+  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/setWebhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url: url.toString(),
+      allowed_updates: ["message", "edited_message", "callback_query"],
+    }),
+  });
+
+  const body = await response.text();
+  return new Response(`${body}\n`, { status: response.ok ? 200 : 500 });
+}
+
 async function handleTelegramUpdate(update, env) {
   if (update.callback_query) {
     const callback = update.callback_query;
@@ -196,10 +218,15 @@ export default {
   },
 
   async fetch(request, env) {
+    const url = new URL(request.url);
     console.log("Request received", {
       method: request.method,
       url: request.url,
     });
+
+    if (request.method === "POST" && url.pathname === "/setup-webhook") {
+      return setTelegramWebhook(env, request.url);
+    }
 
     if (request.method !== "POST") {
       return new Response("Use POST to trigger the workflow or Telegram webhook.\n", { status: 405 });

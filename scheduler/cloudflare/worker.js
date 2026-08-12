@@ -189,7 +189,7 @@ async function handleTelegramUpdate(update, env) {
           "Button help:",
           "",
           "📊 Daily report: sends a full status report now, even if there is no buy/sell signal.",
-          "🔎 Check now: runs a signal-only check. It sends a TQQQ bot message only if BUY/SELL/state-change happens.",
+          "🔎 Check now: sends a compact result every time. If there is no signal, it explains the current blocker.",
           "✅ Bought/Sold at bot price: acknowledgement only. The bot already updated itself at the signal price.",
           "✏️ Different fill: shows the command to sync your exact broker price.",
           "💵 Cash sync help: shows how to update tracked cash.",
@@ -208,7 +208,7 @@ async function handleTelegramUpdate(update, env) {
     if (data === "run_check") {
       await triggerWorkflow(env, { mode: "check" });
       await answerCallback(env, callback.id, "Queued signal check.");
-      await sendTelegram(env, chatId, "Queued 🔎 Check now. This only sends a bot alert if a BUY/SELL/state-change signal is active.");
+      await sendTelegram(env, chatId, "Queued 🔎 Check now. A compact result should arrive after GitHub Actions finishes.");
       return new Response("queued\n");
     }
   }

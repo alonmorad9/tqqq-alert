@@ -90,7 +90,7 @@ The bot waits in cash for the next re-entry:
 GitHub Actions manual modes:
 
 - `daily`: send a full Telegram status report.
-- `check`: run a signal-only check.
+- `check`: run a compact status check.
 - `manual_cash_set`: sync cash after broker changes.
 - `manual_bought`: tell the bot you bought TQQQ manually.
 - `manual_sold`: tell the bot you sold TQQQ manually.
@@ -103,14 +103,14 @@ Telegram sync shortcuts, after the Cloudflare webhook is configured:
 - `/sold PRICE`: sync exact broker sell.
 - `/cash AMOUNT`: sync cash bucket.
 - `/daily`: queue a full report.
-- `/check`: queue a signal check.
+- `/check`: queue a compact status check.
 
 Signal buttons are acknowledgements/helpers only. The bot does not wait for a button before updating its tracked state.
 
 Standard buttons:
 
 - `Daily report`: queues a full status report now, even if there is no buy/sell signal.
-- `Check now`: queues a signal-only check. It sends a bot alert only if BUY/SELL/state-change is active.
+- `Check now`: queues a compact status result every time, including the current blocker when there is no signal.
 - `Cash sync help`: shows `/cash AMOUNT`.
 - `Button help`: explains the buttons.
 

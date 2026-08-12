@@ -1208,7 +1208,7 @@ def update_bot_strategy_benchmark(ticker):
     }
 
 
-def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
+def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, force_check_report=False):
     state = load_state()
     ticker = fetch_market_data()
     bot_strategy = update_bot_strategy_benchmark(ticker)
@@ -1855,14 +1855,19 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         if state_dirty:
             save_state(state)
 
-    # ── INTRADAY: only send if signal ─────────────────────
-    elif is_signal:
+    # ── INTRADAY: send signals, or a compact report for manual /check ──
+    elif is_signal or force_check_report:
         lines = [
             "─" * 30,
-            action,
+            ("🔎 Check Result" if force_check_report and not is_signal else action),
+            *( [f"Action: {action}"] if force_check_report and not is_signal else [] ),
             *( [f"Why: {wait_reason}"] if wait_reason else [] ),
-            "Read first: follow this Action. Extra risk notes are context only unless this is a SELL/BUY signal.",
-            "Buttons: confirm means you used the bot price; different-fill buttons show the exact sync format.",
+            (
+                "Meaning: manual check result only. Follow it if it says BUY/SELL; otherwise it is just a status snapshot."
+                if force_check_report and not is_signal
+                else "Read first: follow this Action. Extra risk notes are context only unless this is a SELL/BUY signal."
+            ),
+            "Buttons: Daily gives a full report; Check gives this compact result; confirm buttons use bot-price fills.",
             *instruction_lines,
             "─" * 30,
             f"💰 Price:      ${current_price:.2f}",
@@ -1893,13 +1898,19 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
         if not position_open:
             lines.append(f"🧊 Re-entry RSI: {format_reentry_rsi_status(current_rsi, reentry_rsi_ok)}")
             lines.append("🅿️ Waiting Asset: Cash")
+            if fresh_entry_setup and not reentry_rsi_ok:
+                lines.append(f"Next trigger: RSI must cool from {current_rsi:.1f} to <= {REENTRY_RSI_MAX}.")
+            elif fresh_entry_setup and reentry_rsi_ok and entry_open_delay_ok:
+                lines.append("Next trigger: conditions look ready; if no BUY fired, cash/manual state is blocking it.")
+            elif not fresh_entry_setup:
+                lines.append("Next trigger: wait for fresh-entry setup above SMA20/SMA200.")
         lines.extend([
             f"📦 Shares:     {shares:.4f}",
             f"🏦 Cash:       ${cash:.2f}",
             f"{pnl_emoji} P&L:        ${pnl:+.2f} ({pnl_pct:+.2f}%)",
         ])
         msg = "\n".join(lines)
-        send_telegram(msg, reply_markup=build_reply_markup(action))
+        send_telegram(msg, reply_markup=build_reply_markup(action if is_signal else None))
         if state_dirty:
             save_state(state)
 
@@ -2146,4 +2157,4 @@ if __name__ == "__main__":
     elif mode == "manual_cash_set":
         mark_manual_cash_set()
     else:
-        check_strategy(daily_report=False)
+        check_strategy(daily_report=False, force_check_report=True)

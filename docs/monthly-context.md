@@ -107,6 +107,15 @@ Telegram sync shortcuts, after the Cloudflare webhook is configured:
 
 Signal buttons are acknowledgements/helpers only. The bot does not wait for a button before updating its tracked state.
 
+Standard buttons:
+
+- `Daily report`: queues a full report.
+- `Check now`: queues a signal-only check.
+- `Cash sync help`: shows `/cash AMOUNT`.
+- `Button help`: explains the buttons.
+
+Exact broker fills still require a short command because Telegram buttons cannot collect arbitrary prices.
+
 ## Telegram Message Meaning
 
 Follow the `Action` line first.

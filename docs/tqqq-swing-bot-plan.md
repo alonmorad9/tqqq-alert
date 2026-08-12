@@ -112,10 +112,16 @@ You can also sync directly from Telegram after the Cloudflare webhook is configu
 
 Signal messages include buttons:
 
-- `Bought near bot price`: acknowledgement only. The bot already tracked the buy when it sent the signal.
-- `Sold near bot price`: acknowledgement only. The bot already tracked the sell when it sent the signal.
+- `Bought at bot price`: acknowledgement only. The bot already tracked the buy when it sent the signal.
+- `Sold at bot price`: acknowledgement only. The bot already tracked the sell when it sent the signal.
 - `Different buy price`: reminds you to send `/bought PRICE SHARES`.
 - `Different sell price`: reminds you to send `/sold PRICE`.
+- `Daily report`: queues a full Telegram report.
+- `Check now`: queues a signal-only check.
+- `Cash sync help`: shows `/cash AMOUNT`.
+- `Button help`: explains what each button does.
+
+Telegram inline buttons cannot enter an exact custom broker price by themselves. For exact fills, use `/bought PRICE SHARES` or `/sold PRICE`.
 
 ## Revival Steps
 

@@ -621,28 +621,32 @@ def format_reentry_rsi_rule():
     return f"RSI <= {REENTRY_RSI_MAX}"
 
 
-def build_signal_reply_markup(action):
-    if not action:
-        return None
-    if "BUY SIGNAL" in action:
-        return {
-            "inline_keyboard": [
-                [
-                    {"text": "✅ Bought near bot price", "callback_data": "confirm_buy"},
-                    {"text": "✏️ Different buy price", "callback_data": "help_bought"},
-                ]
-            ]
-        }
-    if "SELL" in action:
-        return {
-            "inline_keyboard": [
-                [
-                    {"text": "✅ Sold near bot price", "callback_data": "confirm_sell"},
-                    {"text": "✏️ Different sell price", "callback_data": "help_sold"},
-                ]
-            ]
-        }
-    return None
+def build_reply_markup(action=None):
+    signal_rows = []
+    if action and "BUY SIGNAL" in action:
+        signal_rows.append([
+            {"text": "✅ Bought at bot price", "callback_data": "confirm_buy"},
+            {"text": "✏️ Different buy fill", "callback_data": "help_bought"},
+        ])
+    elif action and "SELL" in action:
+        signal_rows.append([
+            {"text": "✅ Sold at bot price", "callback_data": "confirm_sell"},
+            {"text": "✏️ Different sell fill", "callback_data": "help_sold"},
+        ])
+
+    return {
+        "inline_keyboard": [
+            *signal_rows,
+            [
+                {"text": "📊 Daily report", "callback_data": "run_daily"},
+                {"text": "🔎 Check now", "callback_data": "run_check"},
+            ],
+            [
+                {"text": "💵 Cash sync help", "callback_data": "help_cash"},
+                {"text": "ℹ️ Button help", "callback_data": "help_buttons"},
+            ],
+        ]
+    }
 
 
 def trailing_true_count(series):
@@ -1766,6 +1770,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"Action: {action}",
             *( [f"Why: {wait_reason}"] if wait_reason else [] ),
             "Read first: follow the Action line. The risk sections below explain context unless they explicitly create the Action.",
+            "Buttons: Daily/Check are safe one-tap refreshes. On BUY/SELL signals, confirm buttons only acknowledge bot-price execution; use different-fill help if your broker fill differs.",
             *instruction_lines,
             "─" * 30,
             f"Mode:          {position_status}",
@@ -1843,7 +1848,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"Entry Date:      {state.get('entry_date') or 'Waiting for entry'}",
         ])
         msg = "\n".join(lines)
-        send_telegram(msg, reply_markup=build_signal_reply_markup(action) if is_signal else None)
+        send_telegram(msg, reply_markup=build_reply_markup(action if is_signal else None))
         if dedupe_report:
             state["last_report_key"] = report_key
             state_dirty = True
@@ -1857,6 +1862,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             action,
             *( [f"Why: {wait_reason}"] if wait_reason else [] ),
             "Read first: follow this Action. Extra risk notes are context only unless this is a SELL/BUY signal.",
+            "Buttons: confirm means you used the bot price; different-fill buttons show the exact sync format.",
             *instruction_lines,
             "─" * 30,
             f"💰 Price:      ${current_price:.2f}",
@@ -1893,7 +1899,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"{pnl_emoji} P&L:        ${pnl:+.2f} ({pnl_pct:+.2f}%)",
         ])
         msg = "\n".join(lines)
-        send_telegram(msg, reply_markup=build_signal_reply_markup(action))
+        send_telegram(msg, reply_markup=build_reply_markup(action))
         if state_dirty:
             save_state(state)
 

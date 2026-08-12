@@ -172,6 +172,24 @@ async function handleTelegramUpdate(update, env) {
       await answerCallback(env, callback.id, "Send: /sold PRICE");
       return new Response("ok\n");
     }
+    if (data === "help_cash") {
+      await answerCallback(env, callback.id, "Send: /cash AMOUNT, for example /cash 1000");
+      return new Response("ok\n");
+    }
+    if (data === "help_buttons") {
+      await answerCallback(env, callback.id, "Daily/Check run the bot. Confirm buttons only acknowledge bot-price fills. Different-fill buttons show exact sync commands.");
+      return new Response("ok\n");
+    }
+    if (data === "run_daily") {
+      await triggerWorkflow(env, { mode: "daily" });
+      await answerCallback(env, callback.id, "Queued daily report.");
+      return new Response("queued\n");
+    }
+    if (data === "run_check") {
+      await triggerWorkflow(env, { mode: "check" });
+      await answerCallback(env, callback.id, "Queued signal check.");
+      return new Response("queued\n");
+    }
   }
 
   const message = update.message || update.edited_message;

@@ -102,13 +102,32 @@ Use GitHub Actions `workflow_dispatch`:
 - `daily`: send a full Telegram report.
 - `check`: run a signal check.
 
+You can also sync directly from Telegram after the Cloudflare webhook is configured:
+
+- `/bought 75.30 13.2802` syncs an exact broker buy.
+- `/sold 82.10` syncs an exact broker sell.
+- `/cash 1000` syncs the cash bucket.
+- `/daily` queues a full report.
+- `/check` queues a signal check.
+
+Signal messages include buttons:
+
+- `Bought near bot price`: acknowledgement only. The bot already tracked the buy when it sent the signal.
+- `Sold near bot price`: acknowledgement only. The bot already tracked the sell when it sent the signal.
+- `Different buy price`: reminds you to send `/bought PRICE SHARES`.
+- `Different sell price`: reminds you to send `/sold PRICE`.
+
 ## Revival Steps
 
 1. Confirm `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` secrets still exist in GitHub.
 2. Enable `.github/workflows/main.yml`.
-3. Optional: redeploy the Cloudflare scheduler if you want external cron triggering too.
-4. Run `manual_cash_set` if your real bucket is not exactly `$1,000`.
-5. Run `daily` once and confirm the Telegram message arrives in the same chat.
+3. Confirm Cloudflare Worker secrets exist:
+   - `GITHUB_TOKEN`
+   - `TELEGRAM_TOKEN`
+4. Set Telegram webhook to the Cloudflare Worker URL.
+5. Redeploy the Cloudflare scheduler if you want external cron triggering too.
+6. Run `manual_cash_set` or Telegram `/cash AMOUNT` if your real bucket is not exactly `$1,000`.
+7. Run `daily` or Telegram `/daily` once and confirm the Telegram message arrives in the same chat.
 
 ## Important Risk Note
 

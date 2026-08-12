@@ -97,6 +97,16 @@ GitHub Actions manual modes:
 
 The bot does not place broker orders. It updates its tracked state and sends Telegram instructions. You still place the trade manually unless you later connect broker automation.
 
+Telegram sync shortcuts, after the Cloudflare webhook is configured:
+
+- `/bought PRICE SHARES`: sync exact broker buy.
+- `/sold PRICE`: sync exact broker sell.
+- `/cash AMOUNT`: sync cash bucket.
+- `/daily`: queue a full report.
+- `/check`: queue a signal check.
+
+Signal buttons are acknowledgements/helpers only. The bot does not wait for a button before updating its tracked state.
+
 ## Telegram Message Meaning
 
 Follow the `Action` line first.

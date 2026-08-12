@@ -621,6 +621,30 @@ def format_reentry_rsi_rule():
     return f"RSI <= {REENTRY_RSI_MAX}"
 
 
+def build_signal_reply_markup(action):
+    if not action:
+        return None
+    if "BUY SIGNAL" in action:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Bought near bot price", "callback_data": "confirm_buy"},
+                    {"text": "✏️ Different buy price", "callback_data": "help_bought"},
+                ]
+            ]
+        }
+    if "SELL" in action:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Sold near bot price", "callback_data": "confirm_sell"},
+                    {"text": "✏️ Different sell price", "callback_data": "help_sold"},
+                ]
+            ]
+        }
+    return None
+
+
 def trailing_true_count(series):
     count = 0
     for value in reversed(series.tolist()):
@@ -1819,7 +1843,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"Entry Date:      {state.get('entry_date') or 'Waiting for entry'}",
         ])
         msg = "\n".join(lines)
-        send_telegram(msg)
+        send_telegram(msg, reply_markup=build_signal_reply_markup(action) if is_signal else None)
         if dedupe_report:
             state["last_report_key"] = report_key
             state_dirty = True
@@ -1869,7 +1893,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
             f"{pnl_emoji} P&L:        ${pnl:+.2f} ({pnl_pct:+.2f}%)",
         ])
         msg = "\n".join(lines)
-        send_telegram(msg)
+        send_telegram(msg, reply_markup=build_signal_reply_markup(action))
         if state_dirty:
             save_state(state)
 
@@ -1879,11 +1903,14 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False):
     print(f"[{'DAILY' if daily_report else 'CHECK'}] {action} | Price: {current_price:.2f}")
 
 
-def send_telegram(message):
+def send_telegram(message, reply_markup=None):
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    response = requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=30)
+    payload = {"chat_id": chat_id, "text": message}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    response = requests.post(url, json=payload, timeout=30)
     response.raise_for_status()
 
 

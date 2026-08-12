@@ -86,4 +86,20 @@ To revive the same Telegram chat, use the same GitHub secrets:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-Then enable the GitHub Actions workflow and, if desired, redeploy the Cloudflare scheduler.
+Then enable the GitHub Actions workflow and redeploy the Cloudflare scheduler.
+
+Cloudflare Worker requirements:
+
+- `GITHUB_TOKEN` secret: dispatches GitHub workflows.
+- `TELEGRAM_TOKEN` secret: answers Telegram button taps and command responses.
+- Telegram webhook should point to the deployed worker URL.
+
+Telegram commands:
+
+- `/bought PRICE SHARES`
+- `/sold PRICE`
+- `/cash AMOUNT`
+- `/daily`
+- `/check`
+
+Inline buttons on BUY/SELL messages are no-op confirmations or command helpers. The bot has already updated its internal state when it sends the original signal.

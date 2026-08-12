@@ -138,6 +138,7 @@ Telegram inline buttons cannot enter an exact custom broker price by themselves.
 3. Confirm Cloudflare Worker secrets exist:
    - `GITHUB_TOKEN`
    - `TELEGRAM_TOKEN`
+   - `TELEGRAM_CHAT_ID`
 4. Set Telegram webhook to the Cloudflare Worker URL.
 5. Redeploy the Cloudflare scheduler if you want external cron triggering too.
 6. Run `manual_cash_set` or Telegram `/cash AMOUNT` if your real bucket is not exactly `$1,000`.

@@ -107,6 +107,8 @@ Telegram sync shortcuts, after the Cloudflare webhook is configured:
 - `/cash AMOUNT`: sync cash bucket.
 - `/daily`: queue a full report.
 - `/check`: queue a compact status check.
+- `/swing`: queue the swing tracker daily digest.
+- `/swingstops`: immediately check swing trade manual stop ladders.
 
 Signal buttons are sync helpers only. BUY/SELL alerts do not update the real tracked state until `/bought PRICE SHARES` or `/sold PRICE` is sent.
 
@@ -114,6 +116,8 @@ Standard buttons:
 
 - `Daily report`: queues a full status report now, even if there is no buy/sell signal.
 - `Check now`: queues a compact status result every time, including the current blocker when there is no signal.
+- `Swing digest`: queues the swing tracker daily sync/digest.
+- `Swing stops`: immediately checks whether any swing trade reached a manual stop-ladder trigger.
 - `Sync buy fill`: shows `/bought PRICE SHARES`.
 - `Sync sell fill`: shows `/sold PRICE`.
 - `Cash sync help`: shows `/cash AMOUNT`.

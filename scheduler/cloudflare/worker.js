@@ -3,6 +3,9 @@ const REPO = "tqqq-alert";
 const WORKFLOW_FILE = "main.yml";
 const SWING_REPO = "swing-tracker-new";
 const SWING_WORKFLOW_FILE = "daily-sync.yml";
+const SWING_TRADES_PATH = "data/trades.json";
+const MARKET_OPEN_MINUTE_UTC = 13 * 60 + 30;
+const MARKET_CLOSE_MINUTE_UTC = 20 * 60;
 
 async function triggerWorkflow(env, inputs = {}) {
   const workflowInputs = {
@@ -88,6 +91,154 @@ async function triggerSwingWorkflow(env) {
   console.log("Swing GitHub dispatch succeeded", { status: response.status });
 }
 
+async function readGitHubJson(env, repo, path) {
+  const response = await fetch(
+    `https://api.github.com/repos/${OWNER}/${repo}/contents/${path}?ref=main`,
+    {
+      headers: {
+        "Accept": "application/vnd.github.raw+json",
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+        "User-Agent": "tqqq-alert-scheduler",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+  );
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub read failed for ${repo}/${path}: ${response.status} ${body}`);
+  }
+  return response.json();
+}
+
+async function fetchYahooQuote(symbol) {
+  const response = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1m`,
+    {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 tqqq-alert-scheduler",
+      },
+    },
+  );
+  if (!response.ok) throw new Error(`Yahoo quote failed for ${symbol}: ${response.status}`);
+  const body = await response.json();
+  const result = body?.chart?.result?.[0];
+  const quote = result?.indicators?.quote?.[0];
+  const closes = (quote?.close || []).filter((v) => typeof v === "number" && isFinite(v));
+  const highs = (quote?.high || []).filter((v) => typeof v === "number" && isFinite(v));
+  const timestamps = result?.timestamp || [];
+  const price = closes.length ? closes[closes.length - 1] : null;
+  const dayHigh = highs.length ? Math.max(...highs) : price;
+  const lastTs = timestamps.length ? timestamps[timestamps.length - 1] : null;
+  if (price == null) throw new Error(`Yahoo quote returned no price for ${symbol}`);
+  return {
+    price,
+    dayHigh: dayHigh ?? price,
+    source: lastTs ? `Yahoo 1m ${new Date(lastTs * 1000).toISOString()}` : "Yahoo 1m",
+  };
+}
+
+function isWeekday(now = new Date()) {
+  const day = now.getUTCDay();
+  return day >= 1 && day <= 5;
+}
+
+function isMarketWindow(now = new Date()) {
+  if (!isWeekday(now)) return false;
+  const minute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  return minute >= MARKET_OPEN_MINUTE_UTC && minute <= MARKET_CLOSE_MINUTE_UTC;
+}
+
+function manualLadderStopDue(trade, quote) {
+  const ladder = Array.isArray(trade.ladder) ? trade.ladder : [];
+  const currentStop = typeof trade.stop === "number" && isFinite(trade.stop) ? trade.stop : null;
+  const ref = Math.max(
+    Number(trade.peakPrice) || 0,
+    Number(trade.entry) || 0,
+    quote.price || 0,
+    quote.dayHigh || 0,
+  );
+  const hit = ladder
+    .filter((stage) => stage && typeof stage.price === "number" && typeof stage.stop === "number")
+    .filter((stage) => ref >= stage.price)
+    .filter((stage) => currentStop == null || stage.stop > currentStop + 0.01);
+  if (!hit.length) return null;
+  const best = hit.reduce((max, stage) => stage.stop > max.stop ? stage : max, hit[0]);
+  return { ...best, ref, currentStop };
+}
+
+async function wasRecentlyAlerted(request) {
+  const cached = await caches.default.match(request);
+  return Boolean(cached);
+}
+
+async function markRecentlyAlerted(request) {
+  await caches.default.put(
+    request,
+    new Response("alerted", {
+      headers: {
+        "Cache-Control": "public, max-age=28800",
+      },
+    }),
+  );
+}
+
+async function checkSwingStopLadders(env, options = {}) {
+  const alertChatId = options.chatId || env.TELEGRAM_CHAT_ID;
+  if (!alertChatId) {
+    console.log("Skipping swing stop monitor: TELEGRAM_CHAT_ID Cloudflare secret missing");
+    return { checked: 0, alerts: 0, skipped: "missing_chat_id" };
+  }
+  if (!options.force && !isMarketWindow()) {
+    return { checked: 0, alerts: 0, skipped: "market_closed" };
+  }
+
+  const trades = await readGitHubJson(env, SWING_REPO, SWING_TRADES_PATH);
+  const openTrades = Array.isArray(trades) ? trades.filter((trade) => trade && trade.ticker) : [];
+  let checked = 0;
+  let alerts = 0;
+
+  for (const trade of openTrades) {
+    const ladder = Array.isArray(trade.ladder) ? trade.ladder : [];
+    if (!ladder.some((stage) => typeof stage?.price === "number" && typeof stage?.stop === "number")) continue;
+    checked++;
+
+    try {
+      const quote = await fetchYahooQuote(trade.ticker);
+      const due = manualLadderStopDue(trade, quote);
+      if (!due) continue;
+
+      const key = `${trade.id || trade.ticker}:${trade.ticker}:${due.stop.toFixed(2)}:${new Date().toISOString().slice(0, 10)}`;
+      const cacheRequest = new Request(`https://tqqq-alert-scheduler.local/swing-stop-alert/${encodeURIComponent(key)}`);
+      if (!options.force && await wasRecentlyAlerted(cacheRequest)) continue;
+
+      const lines = [
+        `🚨 Swing Stop Update — ${trade.ticker}`,
+        "──────────────────────────────",
+        "Action: RAISE STOP",
+        "Why: your manual stop-ladder trigger was reached intraday.",
+        "Advisory only: update the broker manually, then update the tracker stop.",
+        "──────────────────────────────",
+        `Price:        $${quote.price.toFixed(2)}`,
+        `Day high/ref: $${due.ref.toFixed(2)}`,
+        `Trigger hit:  ${due.stage || "ladder stage"} at $${due.price.toFixed(2)}`,
+        `Old stop:     ${due.currentStop == null ? "not set" : "$" + due.currentStop.toFixed(2)}`,
+        `New stop:     $${due.stop.toFixed(2)}`,
+        `Source:       ${quote.source}`,
+        "──────────────────────────────",
+        `Broker action: move ${trade.ticker} stop to $${due.stop.toFixed(2)}.`,
+      ];
+      await sendTelegram(env, alertChatId, lines.join("\n"));
+      await markRecentlyAlerted(cacheRequest);
+      alerts++;
+    } catch (error) {
+      console.error(`Swing stop monitor failed for ${trade.ticker}:`, error.message);
+    }
+  }
+
+  return { checked, alerts };
+}
+
 function parseTelegramCommand(text = "") {
   const parts = text.trim().split(/\s+/);
   const command = (parts[0] || "").split("@")[0].toLowerCase();
@@ -134,6 +285,7 @@ function commandHelp() {
     "/daily — send full report",
     "/check — run signal check",
     "/swing — run swing trade digest",
+    "/swingstops — check swing stop ladders now",
     "/whoami — show this Telegram chat id",
   ].join("\n");
 }
@@ -231,6 +383,7 @@ async function handleTelegramUpdate(update, env) {
           "📊 Daily report: sends a full status report now, even if there is no buy/sell signal.",
           "🔎 Check now: sends a compact result every time. If there is no signal, it explains the current blocker.",
           "📈 Swing digest: runs the swing tracker Daily Sync and sends Swing Actions/Daily Digest to this chat.",
+          "🚨 Swing stops: immediately checks whether your manual stop ladders need broker updates.",
           "✏️ Sync buy fill: shows /bought PRICE SHARES. Use it after the broker buy fills.",
           "✏️ Sync sell fill: shows /sold PRICE. Use it after the broker sell fills.",
           "💵 Cash sync help: shows how to update tracked cash.",
@@ -260,6 +413,12 @@ async function handleTelegramUpdate(update, env) {
       await sendTelegram(env, chatId, "Queued 📈 Swing digest. It should arrive after the swing tracker Daily Sync finishes.");
       return new Response("queued\n");
     }
+    if (data === "run_swing_stops") {
+      const result = await checkSwingStopLadders(env, { force: true, chatId });
+      await answerCallback(env, callback.id, `Swing stops checked: ${result.alerts || 0} alert(s).`);
+      await sendTelegram(env, chatId, `Checked 🚨 Swing stops now: ${result.checked || 0} ladder trade(s), ${result.alerts || 0} alert(s).`);
+      return new Response("ok\n");
+    }
   }
 
   const message = update.message || update.edited_message;
@@ -284,9 +443,15 @@ async function handleTelegramUpdate(update, env) {
         `chat.id: ${chatId}`,
         `chat.type: ${message?.chat?.type || "unknown"}`,
         "",
-        "Use chat.id as TELEGRAM_CHAT_ID in the swing tracker GitHub repo.",
+        "Use chat.id as TELEGRAM_CHAT_ID in the swing tracker GitHub repo and the Cloudflare worker.",
       ].join("\n")
     );
+    return new Response("ok\n");
+  }
+
+  if (text.startsWith("/swingstops")) {
+    const result = await checkSwingStopLadders(env, { force: true, chatId });
+    await sendTelegram(env, chatId, `Checked 🚨 Swing stops now: ${result.checked || 0} ladder trade(s), ${result.alerts || 0} alert(s).`);
     return new Response("ok\n");
   }
 
@@ -323,7 +488,10 @@ export default {
       cron: event.cron,
       scheduledTime: event.scheduledTime,
     });
-    ctx.waitUntil(triggerWorkflow(env, { mode: "auto", schedule: event.cron }));
+    ctx.waitUntil(Promise.allSettled([
+      triggerWorkflow(env, { mode: "auto", schedule: event.cron }),
+      checkSwingStopLadders(env),
+    ]));
   },
 
   async fetch(request, env) {

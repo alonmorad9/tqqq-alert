@@ -22,7 +22,10 @@ The starter worker lives in `scheduler/cloudflare`.
 
 ```bash
 npx wrangler secret put GITHUB_TOKEN
+npx wrangler secret put TELEGRAM_CHAT_ID
 ```
+
+`TELEGRAM_CHAT_ID` lets the worker send scheduled swing stop-ladder alerts without waiting for a Telegram button press.
 
 3. Deploy:
 

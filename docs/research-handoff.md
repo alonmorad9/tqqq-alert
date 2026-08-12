@@ -1,140 +1,89 @@
-# TQQQ Research Handoff
+# TQQQ Swing Research Handoff
 
-Last updated: 2026-06-10
+Last updated: 2026-08-12
 
-## Current Strategy
+## Decision
 
-The repo is intentionally **TQQQ-only**. Out-of-position capital is modeled as cash.
+The repo has been converted back to a clean **TQQQ-only swing alert bot**.
 
-Current live rules are the **New Broad Max / max-revenue** profile:
+Selected production profile:
 
-| Rule | Value |
-|---|---:|
-| TQQQ trailing stop | 25% |
-| Fresh-entry guard | 10% below average cost for first 2 trading days |
-| Profit target | +25%, sell all |
-| Re-buy pullback | -7.5% from exit price |
-| Re-buy timeout | 10 trading days |
-| Manual safety timeout | 3 trading days |
-| Re-entry RSI cap | RSI14 <= 70 |
-| SMA200 confirmation | 3 confirmed checks/days |
-| Parabolic stretch | Advisory only |
-| Waiting state | Cash |
-| Early-warning risk | Advisory only |
+- Profit target: `+8%`.
+- Hard stop: `-7.5%` from entry.
+- Trailing stop: `-12%` from highest high since entry.
+- Re-entry: `-3%` from last sell price or `3` trading days.
+- Manual-sell timeout: `3` trading days.
+- RSI entry cap: `RSI14 <= 60`.
+- SMA200 confirmation: `3` confirmed checks/days.
+- Waiting asset: cash.
+- Early-warning/parabolic/fibonacci sections: advisory only.
 
-## Historical Research Summary
+## Why This Replaced The Old Strategy
 
-The selected rule set came from the combined TQQQ strategy searches saved under `research/`.
-
-On 2026-06-10, after another broad combined-rule search and walk-forward robustness check, the user chose the New Broad Max setup for maximum revenue.
-
-The selected New Broad Max profile is:
+The old repo had drifted into a wide trend-following / max-return style:
 
 - 25% trailing stop.
-- Temporary 10% fresh-entry guard for the first 2 trading days after a buy.
-- +25% profit target.
-- -7.5% pullback re-entry.
-- 10 trading-day timeout after normal profit exits.
-- 3 trading-day timeout after manual safety sells.
-- RSI re-entry cap: RSI14 <= 70.
-- 3 confirmed SMA200 checks/days for entries and exits.
-- Parabolic stretch warnings remain visible, but they are advisory only and do not auto-sell.
-- Early-warning signals remain in Telegram as context only; they no longer trigger automatic exits.
-- The fast-drop combo `VIX 5d spike >= 25%` plus `RSI falling from 70+` is highlighted clearly as advisory guidance to consider manual stop tightening.
-- Cash while waiting.
+- 25% profit target.
+- 10-day timeout.
+- RSI <= 70.
 
-Backtest comparison from the combined-rule grid:
+That produced attractive theoretical returns in some broad grids, but it did not match the user's desired behavior after experiencing large TQQQ drawdowns. The user now wants a smaller swing bucket that takes profits often and cuts failed trades earlier.
 
-- New Broad Max selected profile: `420.4x`, `-42.5% max drawdown`, `68.6% win rate`.
-- Previous Best Calmar profile: `309.3x`, `44.8% CAGR`, `-37.3% max drawdown`, `61.3% win rate`.
-- Best <=35% drawdown profile: `166.3x`, `39.1% CAGR`, `-33.5% max drawdown`.
-- Current practical-protection profile before this switch: `20.4x`, `21.5% CAGR`, `-32.8% max drawdown`.
+## Backtest Result
 
-Walk-forward robustness summary:
+Selected swing setup on `$1,000`:
 
-- New Broad Max won 4 of 5 tested periods against the previous recommended profile.
-- It lost only in 2015-2018.
-- The tradeoff is clear: more historical revenue and better win rate, but larger drawdown risk.
+- Final: `$70,718`.
+- Multiple: `70.7x`.
+- CAGR: `33.6%`.
+- Max drawdown: `-28.6%`.
+- Win rate: `60.6%`.
+- Trades: `360`.
+- Exits: `180`.
 
-Recent one-month simulation from the April 29 position through the June 5 close:
+Exit mix:
 
-- Best Calmar selected profile: `$2,811.41`, `+12.9%`, `-16.4% max drawdown`.
-- Practical-protection profile: `$2,791.96`, `+12.1%`, `-10.5% max drawdown`.
-- Raw max-revenue winner: `$2,821.45`, `+13.3%`, `-11.7% max drawdown`.
+- Profit exits: `109`.
+- Hard stops: `45`.
+- Trailing stops: `22`.
+- SMA200 exits: `4`.
 
-On 2026-06-06, a fresh-entry guard was added after the June 5 drawdown exposed a specific failure mode: a newly synced/manual buy can take a large immediate hit while the normal 25% trend stop is still far away. A quick historical check showed that a 10% guard for the first 1-2 trading days improved the saved full-history result in that test family, but it triggered very rarely. Treat it as a narrow failed-entry protection layer, not as a replacement for the main strategy. Buy and manual-buy messages should show this guard price so the user can also set a broker stop or TradingView price alert immediately.
+Key comparisons:
 
-Follow-up intraday check: the free March-June 2026 5-minute Yahoo window showed that a 10-minute bot can otherwise sell on the fresh-entry guard and re-buy almost immediately while price is still above SMA200. Fresh-entry guard exits now create a same-day cooldown only. In that recent window, the cooldown variant ended at `1.2780x` vs `1.2638x` for the immediate-rebuy baseline. A full-history daily check favored same-day cooldown over a longer pullback-wait after guard sells, because the longer wait reduced the main strategy from `738.5x` to `530.0x`.
+- A `10%` profit target made less money and had deeper drawdown.
+- A `6%` profit target churned too much and made less money.
+- A `15%` trailing stop made less money and had worse drawdown.
+- A `5%` hard stop created too many whipsaws.
+- RSI <= 65 allowed too many hot re-entries compared with RSI <= 60.
 
-Additional June 5 intraday check: the bot's harmful action was buying right at the 09:30 New York open after a pullback target was hit. On the free March-June 2026 5-minute window, delaying re-buys until 10:00 New York improved the recent run from `1.2780x` to `1.3063x`; delaying all bot-generated buys until 10:00 New York improved it to `1.3136x`. Production now blocks all bot buy signals during the first 30 market minutes. Treat this as an execution-quality guard based on limited recent intraday data, not a long-history optimized signal.
+## Implementation Notes
 
-## Free Breadth / Sector Leadership Test
+The legacy `fresh_entry_guard` function name remains in code for compatibility, but its behavior is now the permanent hard stop:
 
-On 2026-05-24, tested free sector-leadership ideas using the local historical export with TQQQ, QQQ, VIX, and XLK.
+- `active`: while position is open.
+- `stop`: `avg_cost * 0.925`.
+- `hit`: current price <= stop.
 
-Research script:
+Do not reintroduce the old first-two-days guard unless a new backtest proves it.
 
-- `research/breadth_sector_strategy_search.py`
+All normal exits, including hard stop, trailing stop, and SMA200 exit, now enter the same swing re-entry path:
 
-Saved result:
-
-- `research/out/breadth_sector_strategy_results.csv`
-
-Conclusion:
-
-- The current TQQQ-only strategy remained best: `585.2x`, `54.3% CAGR`, `-36.4% max drawdown`.
-- The best XLK/QQQ leadership variant reached `472.9x`, `52.1% CAGR`, `-36.4% max drawdown`.
-- Most sector-leadership exits caused too many false exits and reduced compounding.
-- Do not add XLK/QQQ leadership as an automatic sell rule unless future broader Nasdaq-100 breadth research proves stronger.
+- Store `last_profit_sell_price`.
+- Set `waiting_for_pullback = true`.
+- Wait for 3% pullback or 3 trading days, with trend and RSI gates.
 
 ## Operational Notes
 
-The repo should not fetch or report any non-TQQQ waiting asset.
+State was reset to:
 
-Telegram reports should include:
+- Real tracked path: `$1,000` cash, no TQQQ position.
+- Bot-only benchmark: `$1,000` cash, no TQQQ position.
 
-- Current TQQQ price and price source.
-- SMA200.
-- TQQQ trailing stop when a position is open.
-- Fresh-entry guard when it is active.
-- Re-entry RSI.
-- Cash.
-- TQQQ position value.
-- Total tracked value.
-- Bot-only benchmark.
-- Risk context and early-drop risk explanations. Early-drop risk is advisory only in the current strategy.
-- A clear "Read first" line explaining that the `Action` is the instruction and the risk sections are context unless they created that action.
+If real broker cash differs, run `manual_cash_set`.
 
-Manual actions:
+To revive the same Telegram chat, use the same GitHub secrets:
 
-- `manual_sold`: use after a manual TQQQ sell.
-- `manual_bought`: use after a manual TQQQ buy.
-- `manual_cash_set`: use after broker cash changes manually.
+- `TELEGRAM_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
-## Current State Guidance
-
-The user synced a manual broker TQQQ buy on 2026-06-04.
-
-Current inspected state on 2026-06-08:
-
-- `position_open`: `true`
-- `shares`: `35.3032`
-- `avg_cost`: `$83.84`
-- `entry_date`: `2026-06-04`
-- `highest_high_since_entry`: `$86.25`
-- `cash`: `$4.80`
-- `last_action`: `manual_broker_buy_sync`
-- `manual_exit_mode`: `false`
-- `manual_exit_price`: `null`
-- `manual_exit_date`: `null`
-- `last_report_key`: `2026-06-08:open`
-
-While this position is open, follow the active-position exit/risk rules. If the broker cash or shares differ from `position_state.json`, run the relevant manual sync action.
-
-Month-end comparison should treat this repo as the real source of truth. The real-stock repo is only an optional TQQQ-out stock engine while this repo is out/waiting, and the old swing-stock repo is paused historical context.
-
-As of the 2026-06-08 alignment pass, `real-stock-alert` uses its selected max-revenue stock setup for its bot-only benchmark and any future TQQQ-out stock bucket: RS63-heavy scoring, 8% ATR fresh-buy cap, two-week rank confirmation, and no fixed timeout. It should still show `$0.00` deployable real-stock cash while this TQQQ position is open.
-
-As of 2026-06-09, the `real-stock-alert` bot-only benchmark was reset to `$2,697.38` cash so month-end comparison starts the stock-bot paper path from the current tracked TQQQ-sized bucket estimate.
-
-As of 2026-06-10, `real-stock-alert` sends routine Telegram reports weekly only. Its opening/daily scheduled checks still run and save state/reports, but only send Telegram if a confirmed real stock position gets a sell alert.
+Then enable the GitHub Actions workflow and, if desired, redeploy the Cloudflare scheduler.

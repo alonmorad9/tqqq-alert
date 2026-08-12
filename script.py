@@ -1958,12 +1958,48 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
 def send_telegram(message, reply_markup=None):
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print("[TELEGRAM] Missing TELEGRAM_TOKEN or TELEGRAM_CHAT_ID; skipping send.")
+        return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message}
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-    response = requests.post(url, json=payload, timeout=30)
-    response.raise_for_status()
+    chunks = split_telegram_message(message)
+    for idx, chunk in enumerate(chunks):
+        payload = {"chat_id": chat_id, "text": chunk}
+        if reply_markup and idx == len(chunks) - 1:
+            payload["reply_markup"] = reply_markup
+        response = requests.post(url, json=payload, timeout=30)
+        if not response.ok:
+            print(f"[TELEGRAM] sendMessage failed: {response.status_code} {response.text[:500]}")
+        response.raise_for_status()
+
+
+def split_telegram_message(message, limit=3800):
+    text = str(message or "")
+    if len(text) <= limit:
+        return [text]
+
+    chunks = []
+    current = []
+    current_len = 0
+    for line in text.splitlines():
+        line_len = len(line) + 1
+        if current and current_len + line_len > limit:
+            chunks.append("\n".join(current))
+            current = []
+            current_len = 0
+        if line_len > limit:
+            for i in range(0, len(line), limit):
+                if current:
+                    chunks.append("\n".join(current))
+                    current = []
+                    current_len = 0
+                chunks.append(line[i:i + limit])
+            continue
+        current.append(line)
+        current_len += line_len
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
 
 
 def send_post_sync_report(sync_label):

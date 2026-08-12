@@ -686,6 +686,9 @@ def build_reply_markup(action=None):
                 {"text": "🔎 Check now", "callback_data": "run_check"},
             ],
             [
+                {"text": "📈 Swing digest", "callback_data": "run_swing_daily"},
+            ],
+            [
                 {"text": "💵 Cash sync help", "callback_data": "help_cash"},
                 {"text": "ℹ️ Button help", "callback_data": "help_buttons"},
             ],

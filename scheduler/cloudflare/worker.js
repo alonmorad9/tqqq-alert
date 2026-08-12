@@ -1,6 +1,8 @@
 const OWNER = "alonmorad9";
 const REPO = "tqqq-alert";
 const WORKFLOW_FILE = "main.yml";
+const SWING_REPO = "swing-tracker-new";
+const SWING_WORKFLOW_FILE = "daily-sync.yml";
 
 async function triggerWorkflow(env, inputs = {}) {
   const workflowInputs = {
@@ -52,6 +54,40 @@ async function triggerWorkflow(env, inputs = {}) {
   });
 }
 
+async function triggerSwingWorkflow(env) {
+  console.log("Dispatching swing tracker workflow", {
+    owner: OWNER,
+    repo: SWING_REPO,
+    workflow: SWING_WORKFLOW_FILE,
+  });
+
+  const response = await fetch(
+    `https://api.github.com/repos/${OWNER}/${SWING_REPO}/actions/workflows/${SWING_WORKFLOW_FILE}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+        "User-Agent": "tqqq-alert-scheduler",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({ ref: "main" }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Swing GitHub dispatch failed", {
+      status: response.status,
+      body,
+    });
+    throw new Error(`Swing GitHub dispatch failed: ${response.status} ${body}`);
+  }
+
+  console.log("Swing GitHub dispatch succeeded", { status: response.status });
+}
+
 function parseTelegramCommand(text = "") {
   const parts = text.trim().split(/\s+/);
   const command = (parts[0] || "").split("@")[0].toLowerCase();
@@ -97,6 +133,8 @@ function commandHelp() {
     "/cash AMOUNT — sync cash bucket",
     "/daily — send full report",
     "/check — run signal check",
+    "/swing — run swing trade digest",
+    "/whoami — show this Telegram chat id",
   ].join("\n");
 }
 
@@ -192,6 +230,7 @@ async function handleTelegramUpdate(update, env) {
           "",
           "📊 Daily report: sends a full status report now, even if there is no buy/sell signal.",
           "🔎 Check now: sends a compact result every time. If there is no signal, it explains the current blocker.",
+          "📈 Swing digest: runs the swing tracker Daily Sync and sends Swing Actions/Daily Digest to this chat.",
           "✏️ Sync buy fill: shows /bought PRICE SHARES. Use it after the broker buy fills.",
           "✏️ Sync sell fill: shows /sold PRICE. Use it after the broker sell fills.",
           "💵 Cash sync help: shows how to update tracked cash.",
@@ -215,6 +254,12 @@ async function handleTelegramUpdate(update, env) {
       await sendTelegram(env, chatId, "Queued 🔎 Check now. A compact result should arrive after GitHub Actions finishes.");
       return new Response("queued\n");
     }
+    if (data === "run_swing_daily") {
+      await triggerSwingWorkflow(env);
+      await answerCallback(env, callback.id, "Queued swing digest.");
+      await sendTelegram(env, chatId, "Queued 📈 Swing digest. It should arrive after the swing tracker Daily Sync finishes.");
+      return new Response("queued\n");
+    }
   }
 
   const message = update.message || update.edited_message;
@@ -228,6 +273,27 @@ async function handleTelegramUpdate(update, env) {
   if (text.startsWith("/help") || text.startsWith("/start")) {
     await sendTelegram(env, chatId, commandHelp());
     return new Response("ok\n");
+  }
+
+  if (text.startsWith("/whoami")) {
+    await sendTelegram(
+      env,
+      chatId,
+      [
+        "Telegram chat info:",
+        `chat.id: ${chatId}`,
+        `chat.type: ${message?.chat?.type || "unknown"}`,
+        "",
+        "Use chat.id as TELEGRAM_CHAT_ID in the swing tracker GitHub repo.",
+      ].join("\n")
+    );
+    return new Response("ok\n");
+  }
+
+  if (text.startsWith("/swing")) {
+    await triggerSwingWorkflow(env);
+    await sendTelegram(env, chatId, "Queued 📈 Swing digest. It should arrive after the swing tracker Daily Sync finishes.");
+    return new Response("queued\n");
   }
 
   const inputs = parseTelegramCommand(text);

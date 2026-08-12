@@ -17,7 +17,7 @@ The workflow already supports this with:
 
 The starter worker lives in `scheduler/cloudflare`.
 
-1. Create a GitHub fine-grained token with access to this repository and permission to run Actions workflows.
+1. Create a GitHub fine-grained token with access to both `tqqq-alert` and `swing-tracker-new`, with permission to run Actions workflows and read repository contents.
 2. From `scheduler/cloudflare`, set the token as a secret:
 
 ```bash

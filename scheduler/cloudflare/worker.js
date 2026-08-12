@@ -158,21 +158,23 @@ async function handleTelegramUpdate(update, env) {
     const data = callback.data || "";
     const chatId = callback.message?.chat?.id;
     if (data === "confirm_buy") {
-      await answerCallback(env, callback.id, "Confirmed. Bot already tracks the buy at its signal price.");
+      await answerCallback(env, callback.id, "Exact broker fill required.");
+      await sendTelegram(env, chatId, "The bot no longer records real buys at the signal price.\n\nAfter your broker order fills, send:\n/bought PRICE SHARES\n\nExample:\n/bought 75.30 13.2802");
       return new Response("ok\n");
     }
     if (data === "confirm_sell") {
-      await answerCallback(env, callback.id, "Confirmed. Bot already tracks the sell at its signal price.");
+      await answerCallback(env, callback.id, "Exact broker fill required.");
+      await sendTelegram(env, chatId, "The bot no longer records real sells at the signal price.\n\nAfter your broker order fills, send:\n/sold PRICE\n\nExample:\n/sold 82.10");
       return new Response("ok\n");
     }
     if (data === "help_bought") {
       await answerCallback(env, callback.id, "Sent exact buy-fill help.");
-      await sendTelegram(env, chatId, "To sync an exact broker buy, send:\n/bought PRICE SHARES\n\nExample:\n/bought 75.30 13.2802");
+      await sendTelegram(env, chatId, "Sync buy fill:\nRecords your exact broker buy price and share count, then queues a fresh status report.\n\nSend:\n/bought PRICE SHARES\n\nExample:\n/bought 75.30 13.2802");
       return new Response("ok\n");
     }
     if (data === "help_sold") {
       await answerCallback(env, callback.id, "Sent exact sell-fill help.");
-      await sendTelegram(env, chatId, "To sync an exact broker sell, send:\n/sold PRICE\n\nExample:\n/sold 82.10");
+      await sendTelegram(env, chatId, "Sync sell fill:\nRecords your exact broker sell price, moves the real state to cash/manual safety mode, then queues a fresh status report.\n\nSend:\n/sold PRICE\n\nExample:\n/sold 82.10");
       return new Response("ok\n");
     }
     if (data === "help_cash") {
@@ -190,9 +192,11 @@ async function handleTelegramUpdate(update, env) {
           "",
           "📊 Daily report: sends a full status report now, even if there is no buy/sell signal.",
           "🔎 Check now: sends a compact result every time. If there is no signal, it explains the current blocker.",
-          "✅ Bought/Sold at bot price: acknowledgement only. The bot already updated itself at the signal price.",
-          "✏️ Different fill: shows the command to sync your exact broker price.",
+          "✏️ Sync buy fill: shows /bought PRICE SHARES. Use it after the broker buy fills.",
+          "✏️ Sync sell fill: shows /sold PRICE. Use it after the broker sell fills.",
           "💵 Cash sync help: shows how to update tracked cash.",
+          "",
+          "Important: BUY/SELL signals do not update your real tracked position automatically. Only exact-fill sync commands update real state.",
           "",
           "Weekly report: not active in this TQQQ swing bot right now. This bot uses opening/closing full reports plus 10-minute signal checks.",
         ].join("\n")

@@ -43,14 +43,15 @@ If TQQQ buy signal is at `$100`:
 
 ## What The Bot Does Automatically
 
-The bot automatically updates its internal tracked state when it sends a buy or sell signal.
+The bot sends BUY/SELL instructions, but it does not place broker orders and does not auto-fill your real tracked state at the bot's market price.
 
-It does not send real broker orders.
+Real state updates only after you sync the exact broker fill:
 
-You should either:
+- After buying, send `/bought PRICE SHARES`.
+- After selling, send `/sold PRICE`.
+- If cash changes outside a trade, send `/cash AMOUNT`.
 
-- Manually place the broker trade when Telegram says `BUY` or `SELL`, or
-- Run `manual_bought` / `manual_sold` if your broker execution price differs materially from the bot's tracked price.
+The bot-only benchmark is different: it remains a paper simulation that auto-follows bot signals at bot prices so you can compare your real path against a clean rules-only path.
 
 ## Telegram Actions
 
@@ -61,7 +62,7 @@ Means: bot believes the trend and QQQ ADX filters allow a new TQQQ swing.
 What to do:
 
 - Buy TQQQ with the intended bucket size.
-- If your execution price differs from the bot's price, run `manual_bought`.
+- After the broker order fills, send `/bought PRICE SHARES`.
 
 ### SELL NOW
 
@@ -70,7 +71,7 @@ Means: one of the real exit rules fired.
 What to do:
 
 - Sell all tracked TQQQ shares.
-- If your broker execution price differs from the bot's price, run `manual_sold`.
+- After the broker order fills, send `/sold PRICE`.
 
 ### WAIT
 
@@ -120,16 +121,14 @@ Report types:
 
 Signal messages include buttons:
 
-- `Bought at bot price`: acknowledgement only. The bot already tracked the buy when it sent the signal.
-- `Sold at bot price`: acknowledgement only. The bot already tracked the sell when it sent the signal.
-- `Different buy price`: reminds you to send `/bought PRICE SHARES`.
-- `Different sell price`: reminds you to send `/sold PRICE`.
+- `Sync buy fill`: reminds you to send `/bought PRICE SHARES`.
+- `Sync sell fill`: reminds you to send `/sold PRICE`.
 - `Daily report`: queues a full Telegram report.
 - `Check now`: queues a compact check result.
 - `Cash sync help`: shows `/cash AMOUNT`.
 - `Button help`: explains what each button does.
 
-Telegram inline buttons cannot enter an exact custom broker price by themselves. Help buttons send persistent chat messages with examples. For exact fills, use `/bought PRICE SHARES` or `/sold PRICE`.
+Telegram inline buttons cannot enter an exact custom broker price by themselves. Help buttons send persistent chat messages with examples. For exact fills, use `/bought PRICE SHARES` or `/sold PRICE`; there is no bot-price auto-fill for the real portfolio.
 
 ## Revival Steps
 

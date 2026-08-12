@@ -669,13 +669,11 @@ def build_reply_markup(action=None):
     signal_rows = []
     if action and "BUY SIGNAL" in action:
         signal_rows.append([
-            {"text": "✅ Bought at bot price", "callback_data": "confirm_buy"},
-            {"text": "✏️ Different buy fill", "callback_data": "help_bought"},
+            {"text": "✏️ Sync buy fill", "callback_data": "help_bought"},
         ])
     elif action and "SELL" in action:
         signal_rows.append([
-            {"text": "✅ Sold at bot price", "callback_data": "confirm_sell"},
-            {"text": "✏️ Different sell fill", "callback_data": "help_sold"},
+            {"text": "✏️ Sync sell fill", "callback_data": "help_sold"},
         ])
 
     return {
@@ -1288,7 +1286,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
     manual_exit_date = state.get("manual_exit_date")
     manual_wait_days = trading_days_since(manual_exit_date, ticker) if manual_exit_mode else 0
     manual_exit_saw_below_sma = bool(state.get("manual_exit_saw_below_sma", False))
-    state_changed = False
     state_dirty = False
     highest_high_since_entry = initialize_highest_high_since_entry(state, ticker)
     if position_open:
@@ -1411,201 +1408,61 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
 
     if position_open and hit_fresh_entry_guard:
         sell_shares = shares
-        cash += sell_shares * current_price
-        shares = 0.0
-        state.update({
-            "position_open": False,
-            "shares": shares,
-            "cash": round(cash, 2),
-            "avg_cost": None,
-            "entry_date": None,
-            "highest_high_since_entry": None,
-            "waiting_for_pullback": True,
-            **clear_early_exit_fields(),
-            "last_profit_sell_price": round(current_price, 4),
-            "profit_exit_date": current_date,
-            **clear_fresh_entry_guard_exit_fields(),
-            **clear_manual_exit_fields(),
-            "last_action": "sell_all_hard_stop",
-        })
-        state_changed = True
         action = "🚨 SELL NOW — HARD STOP HIT"
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
         instruction_lines.append(
             f"Reason: price is at or below the permanent {HARD_STOP_PCT * 100:.1f}% hard stop from entry."
         )
-        rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
-        instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if trend and RSI allow it.")
+        instruction_lines.append("Bot state: not changed yet. After your broker order fills, send /sold PRICE.")
     elif position_open and hit_trailing_stop:
         sell_shares = shares
-        cash += sell_shares * current_price
-        shares = 0.0
-        state.update({
-            "position_open": False,
-            "shares": shares,
-            "cash": round(cash, 2),
-            "avg_cost": None,
-            "entry_date": None,
-            "highest_high_since_entry": None,
-            "waiting_for_pullback": True,
-            **clear_early_exit_fields(),
-            "last_profit_sell_price": round(current_price, 4),
-            "profit_exit_date": current_date,
-            **clear_fresh_entry_guard_exit_fields(),
-            **clear_manual_exit_fields(),
-            "last_action": "sell_all_trailing_stop",
-        })
-        state_changed = True
         action = "🚨 SELL NOW — TRAILING STOP HIT"
         instruction_lines.append(f"Sell all remaining shares: {sell_shares:.4f}")
-        rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
-        instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if trend and RSI allow it.")
+        instruction_lines.append("Bot state: not changed yet. After your broker order fills, send /sold PRICE.")
     elif position_open and crossed_below_sma:
         sell_shares = shares
-        cash += sell_shares * current_price
-        shares = 0.0
-        state.update({
-            "position_open": False,
-            "shares": shares,
-            "cash": round(cash, 2),
-            "avg_cost": None,
-            "entry_date": None,
-            "highest_high_since_entry": None,
-            "waiting_for_pullback": True,
-            **clear_early_exit_fields(),
-            "last_profit_sell_price": round(current_price, 4),
-            "profit_exit_date": current_date,
-            **clear_fresh_entry_guard_exit_fields(),
-            **clear_manual_exit_fields(),
-            "last_action": "sell_all_sma200",
-        })
-        state_changed = True
         action = f"🚨 SELL NOW — SMA200 WEAKNESS CONFIRMED ({SMA_CONFIRM_DAYS} DAYS)"
         instruction_lines.append(f"Sell all remaining shares: {sell_shares:.4f}")
         instruction_lines.append(f"Reason: TQQQ has stayed below SMA200 for {SMA_CONFIRM_DAYS} confirmed checks/days.")
-        rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
-        instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if trend and RSI allow it.")
+        instruction_lines.append("Bot state: not changed yet. After your broker order fills, send /sold PRICE.")
     elif position_open and hit_profit_target:
         sell_shares = shares
-        cash += sell_shares * current_price
-        shares = 0.0
         target_pct = int(round(SWING_PROFIT_TARGET_PCT * 100))
-        state.update({
-            "position_open": False,
-            "shares": shares,
-            "cash": round(cash, 2),
-            "avg_cost": None,
-            "entry_date": None,
-            "highest_high_since_entry": None,
-            "waiting_for_pullback": True,
-            **clear_early_exit_fields(),
-            "last_profit_sell_price": round(current_price, 4),
-            "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
-            **clear_fresh_entry_guard_exit_fields(),
-            **clear_manual_exit_fields(),
-            "last_action": f"swing_profit_exit_{target_pct}",
-        })
-        state_changed = True
         action = f"💰 SELL ALL — +{target_pct}% SWING TARGET HIT"
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
         instruction_lines.append("Then wait in cash.")
-        rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
-        instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
+        instruction_lines.append("Bot state: not changed yet. After your broker order fills, send /sold PRICE.")
     elif position_open and hit_early_warning_exit:
         sell_shares = shares
-        cash += sell_shares * current_price
-        shares = 0.0
-        state.update({
-            "position_open": False,
-            "shares": shares,
-            "cash": round(cash, 2),
-            "avg_cost": None,
-            "entry_date": None,
-            "highest_high_since_entry": None,
-            "waiting_for_pullback": False,
-            "last_profit_sell_price": None,
-            "profit_exit_date": None,
-            "waiting_for_early_reentry": True,
-            "early_exit_price": round(current_price, 4),
-            "early_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
-            **clear_fresh_entry_guard_exit_fields(),
-            **clear_manual_exit_fields(),
-            "last_action": "sell_all_early_warning",
-        })
-        state_changed = True
         action = "🔮 SELL ALL — EARLY DROP RISK HIGH"
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
         instruction_lines.append("Then wait in cash until risk recovery.")
         instruction_lines.append(f"Risk signals: {', '.join(early_warning['active'])}")
-        instruction_lines.append("Next re-buy trigger: price above SMA200 and SMA20 after risk cools.")
+        instruction_lines.append("Bot state: not changed yet. After your broker order fills, send /sold PRICE.")
     elif position_open and hit_parabolic_exit:
         sell_shares = shares
-        cash += sell_shares * current_price
-        shares = 0.0
-        state.update({
-            "position_open": False,
-            "shares": shares,
-            "cash": round(cash, 2),
-            "avg_cost": None,
-            "entry_date": None,
-            "highest_high_since_entry": None,
-            "waiting_for_pullback": True,
-            **clear_early_exit_fields(),
-            "last_profit_sell_price": round(current_price, 4),
-            "profit_exit_date": ticker.index[-1].strftime("%Y-%m-%d"),
-            **clear_fresh_entry_guard_exit_fields(),
-            **clear_manual_exit_fields(),
-            "last_action": "parabolic_profit_exit",
-        })
-        state_changed = True
         action = "⚡ SELL ALL — PARABOLIC PROFIT EXIT"
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
         instruction_lines.append(f"Reason: {', '.join(parabolic['active'])}.")
         instruction_lines.append("Then wait in cash.")
-        rebuy_price = current_price * (1 - SWING_REBUY_DROP_PCT)
-        instruction_lines.append(f"Next re-buy trigger: ${rebuy_price:.2f} or {SWING_REBUY_TIMEOUT_DAYS} trading days if still above SMA200")
+        instruction_lines.append("Bot state: not changed yet. After your broker order fills, send /sold PRICE.")
     elif not position_open and (hit_fresh_buy_signal or hit_rebuy_signal or hit_manual_rebuy_signal or hit_early_reentry_signal):
         buy_cash = cash
         buy_shares = buy_cash / current_price if buy_cash > 0 else 0.0
         if buy_shares > 0:
-            buy_reason = "buy_sma200"
             action = f"🟢 BUY SIGNAL — SMA200 STRENGTH CONFIRMED ({SMA_CONFIRM_DAYS} DAYS)"
             if hit_rebuy_pullback:
-                buy_reason = "buy_swing_pullback"
                 action = "🟢 RE-BUY SIGNAL — PULLBACK TARGET HIT"
             elif hit_rebuy_timeout:
-                buy_reason = "buy_swing_timeout"
                 action = "🟢 RE-BUY SIGNAL — TIMEOUT HIT, TREND STILL OK"
             elif hit_manual_rebuy_pullback:
-                buy_reason = "buy_manual_pullback"
                 action = "🟢 RE-BUY SIGNAL — MANUAL EXIT PULLBACK HIT"
             elif hit_manual_rebuy_reset:
-                buy_reason = "buy_manual_sma_reset"
                 action = "🟢 RE-BUY SIGNAL — SMA200 RESET COMPLETE"
             elif hit_manual_rebuy_timeout:
-                buy_reason = "buy_manual_timeout"
                 action = "🟢 RE-BUY SIGNAL — MANUAL TIMEOUT, TREND STILL OK"
             elif hit_early_reentry_signal:
-                buy_reason = "buy_early_risk_recovery"
                 action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
-            shares = buy_shares
-            cash = 0.0
-            state.update({
-                "position_open": True,
-                "entry_date": ticker.index[-1].strftime("%Y-%m-%d"),
-                "avg_cost": round(current_price, 4),
-                "shares": round(shares, 6),
-                "cash": cash,
-                "highest_high_since_entry": round(current_high, 4),
-                "waiting_for_pullback": False,
-                **clear_early_exit_fields(),
-                "last_profit_sell_price": None,
-                "profit_exit_date": None,
-                **clear_fresh_entry_guard_exit_fields(),
-                **clear_manual_exit_fields(),
-                "last_action": buy_reason,
-            })
-            state_changed = True
             instruction_lines.append(f"Buy with available cash: {money(buy_cash)}")
             instruction_lines.append(f"Estimated shares: {buy_shares:.4f}")
             hard_stop = current_price * (1 - HARD_STOP_PCT)
@@ -1614,6 +1471,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             instruction_lines.append(f"Hard stop: ${hard_stop:.2f} (-{HARD_STOP_PCT * 100:.1f}% from entry).")
             instruction_lines.append(f"Trailing stop starts near: ${trail_stop:.2f} (-{TRAILING_STOP_PCT * 100:.0f}% from high).")
             instruction_lines.append(f"Profit target: ${profit_target:.2f} (+{SWING_PROFIT_TARGET_PCT * 100:.0f}%).")
+            instruction_lines.append("Bot state: not changed yet. After your broker order fills, send /bought PRICE SHARES.")
         else:
             action = f"🟢 BUY SIGNAL — SMA200 STRENGTH CONFIRMED ({SMA_CONFIRM_DAYS} DAYS)"
             if hit_rebuy_pullback:
@@ -1628,7 +1486,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
                 action = "🟢 RE-BUY SIGNAL — MANUAL TIMEOUT, TREND STILL OK"
             elif hit_early_reentry_signal:
                 action = "🟢 RE-BUY SIGNAL — EARLY RISK RECOVERED"
-            instruction_lines.append("No tracked cash is available. Run manual_cash_set after you update your broker cash, or run manual_bought after buying.")
+            instruction_lines.append("No tracked cash is available. Send /cash AMOUNT before buying, or send /bought PRICE SHARES after buying.")
     elif position_open and trailing_stop is not None and current_price > sma200 and current_price > trailing_stop:
         action = "✅ HOLD — Above SMA200, stop intact"
     elif raw_reentry_trigger and not reentry_rsi_ok:
@@ -1691,13 +1549,21 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         else:
             wait_reason = "No buy rule is complete yet."
 
-    if state_changed:
-        state_dirty = True
-
-    is_signal = state_changed or (not position_open and hit_fresh_buy_signal)
-    is_signal = is_signal or (not position_open and hit_rebuy_signal)
-    is_signal = is_signal or (not position_open and hit_manual_rebuy_signal)
-    is_signal = is_signal or (not position_open and hit_early_reentry_signal)
+    sell_signal_active = position_open and (
+        hit_fresh_entry_guard
+        or hit_trailing_stop
+        or crossed_below_sma
+        or hit_profit_target
+        or hit_early_warning_exit
+        or hit_parabolic_exit
+    )
+    buy_signal_active = (not position_open) and (
+        hit_fresh_buy_signal
+        or hit_rebuy_signal
+        or hit_manual_rebuy_signal
+        or hit_early_reentry_signal
+    )
+    is_signal = sell_signal_active or buy_signal_active
 
     position_open = bool(state["position_open"])
     shares = float(state["shares"])
@@ -1839,7 +1705,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             f"Action: {action}",
             *( [f"Why: {wait_reason}"] if wait_reason else [] ),
             "Read first: follow the Action line. The risk sections below explain context unless they explicitly create the Action.",
-            "Buttons: Daily/Check are safe one-tap refreshes. On BUY/SELL signals, confirm buttons only acknowledge bot-price execution; use different-fill help if your broker fill differs.",
+            "Buttons: Daily/Check are safe one-tap refreshes. On BUY/SELL signals, use Sync fill or /bought /sold; real state never assumes a market fill.",
             *instruction_lines,
             "─" * 30,
             f"Mode:          {position_status}",
@@ -1938,7 +1804,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
                 if force_check_report and not is_signal
                 else "Read first: follow this Action. Extra risk notes are context only unless this is a SELL/BUY signal."
             ),
-            "Buttons: Daily gives a full report; Check gives this compact result; confirm buttons use bot-price fills.",
+            "Buttons: Daily gives a full report; Check gives this compact result; Sync fill shows the exact-fill command.",
             *instruction_lines,
             "─" * 30,
             f"💰 Price:      ${current_price:.2f}",

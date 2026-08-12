@@ -97,7 +97,7 @@ GitHub Actions manual modes:
 - `manual_bought`: tell the bot you bought TQQQ manually.
 - `manual_sold`: tell the bot you sold TQQQ manually.
 
-The bot does not place broker orders. It updates its tracked state and sends Telegram instructions. You still place the trade manually unless you later connect broker automation.
+The bot does not place broker orders and does not auto-fill the real tracked portfolio at the bot's market price. It sends Telegram instructions; real state changes only after an exact broker-fill sync.
 
 Telegram sync shortcuts, after the Cloudflare webhook is configured:
 
@@ -107,12 +107,14 @@ Telegram sync shortcuts, after the Cloudflare webhook is configured:
 - `/daily`: queue a full report.
 - `/check`: queue a compact status check.
 
-Signal buttons are acknowledgements/helpers only. The bot does not wait for a button before updating its tracked state.
+Signal buttons are sync helpers only. BUY/SELL alerts do not update the real tracked state until `/bought PRICE SHARES` or `/sold PRICE` is sent.
 
 Standard buttons:
 
 - `Daily report`: queues a full status report now, even if there is no buy/sell signal.
 - `Check now`: queues a compact status result every time, including the current blocker when there is no signal.
+- `Sync buy fill`: shows `/bought PRICE SHARES`.
+- `Sync sell fill`: shows `/sold PRICE`.
 - `Cash sync help`: shows `/cash AMOUNT`.
 - `Button help`: explains the buttons.
 

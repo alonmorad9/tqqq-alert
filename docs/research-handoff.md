@@ -106,4 +106,4 @@ Telegram commands:
 - `/daily`
 - `/check`
 
-Inline buttons on BUY/SELL messages are no-op confirmations or command helpers. The bot has already updated its internal state when it sends the original signal.
+Inline buttons on BUY/SELL messages are exact-fill sync helpers. The real tracked portfolio is not updated at the bot signal price; after a broker fill, sync with `/bought PRICE SHARES` or `/sold PRICE`. The bot-only benchmark still auto-simulates at bot prices for rules-only comparison.

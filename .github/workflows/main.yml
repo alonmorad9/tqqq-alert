@@ -73,7 +73,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add position_state.json bot_strategy_state.json
           git commit -m "Update position state"
-          git push
+
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+
+            echo "git push failed on attempt ${attempt}; retrying after rebase..."
+            sleep $((attempt * 5))
+            git pull --rebase origin main
+          done
+
+          echo "git push failed after 3 attempts."
+          exit 1
       - name: Alert on workflow failure
         if: failure()
         env:

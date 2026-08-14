@@ -146,7 +146,6 @@ Important lines:
 - `Parabolic Stretch`: context only.
 - `Early Drop Warnings`: context only.
 - `Support Break Watch`: context only; shows exact 5-day near support, prior-30 tested support, and whether the tested break is 0/2, 1/2, or 2/2 confirmed.
-- `Bot-Only Benchmark`: what would have happened with no manual overrides.
 
 ## Revival Checklist
 
@@ -155,7 +154,7 @@ To resume Telegram alerts in the same chat:
 1. Make sure GitHub repo secrets still exist:
    - `TELEGRAM_TOKEN`
    - `TELEGRAM_CHAT_ID`
-2. Enable the GitHub Actions workflow `main.yml`.
-3. If using the Cloudflare scheduler, deploy the worker after restoring its cron triggers.
+2. Keep GitHub Actions available for manual/Cloudflare dispatch. Native GitHub cron is intentionally disabled to avoid duplicate scheduled Telegram messages.
+3. Deploy the Cloudflare scheduler after restoring its cron triggers.
 4. Run the `daily` workflow once to confirm the Telegram chat receives a clean status report.
 5. If the broker cash is not exactly `$1,000`, run `manual_cash_set` with the correct amount before taking any signal.

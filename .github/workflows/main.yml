@@ -1,9 +1,6 @@
 name: TQQQ Alert System
 
 on:
-  schedule:
-    - cron: '*/10 13-21 * * 1-5'
-    - cron: '45 13-20 * * 1-5'
   workflow_dispatch:
     inputs:
       mode:

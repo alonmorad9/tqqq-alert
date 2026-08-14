@@ -51,8 +51,6 @@ Real state updates only after you sync the exact broker fill:
 - After selling, send `/sold PRICE`.
 - If cash changes outside a trade, send `/cash AMOUNT`.
 
-The bot-only benchmark is different: it remains a paper simulation that auto-follows bot signals at bot prices so you can compare your real path against a clean rules-only path.
-
 ## Telegram Actions
 
 ### BUY SIGNAL
@@ -94,7 +92,6 @@ Means: no action. Stay with the current state.
 - `Parabolic Stretch`: advisory context only.
 - `Early Drop Warnings`: advisory context only.
 - `Support Break Watch`: advisory warning for a break below the prior 30-period low. It also shows the 5-day near support for awareness. High means 2/2 confirmations; it does not auto-sell, but it is a prompt to consider manual broker/TradingView protection.
-- `Bot-Only Benchmark`: paper path with no manual overrides.
 
 ## Manual Sync
 
@@ -116,7 +113,7 @@ You can also sync directly from Telegram after the Cloudflare webhook is configu
 
 Report types:
 
-- `Daily report`: full status report right now. It explains current state, why WAIT/HOLD/BUY/SELL, account value, risk context, and benchmark.
+- `Daily report`: full status report right now. It explains current state, why WAIT/HOLD/BUY/SELL, account value, and risk context.
 - `Check now`: compact status result. It checks the strategy now and sends a short message every time, including the current blocker when there is no signal.
 - Weekly report: not active in this TQQQ swing bot. The active schedule is opening/closing full reports plus 10-minute signal checks.
 

@@ -82,7 +82,6 @@ All normal exits, including hard stop, trailing stop, and SMA200 exit, now enter
 State was reset to:
 
 - Real tracked path: `$1,000` cash, no TQQQ position.
-- Bot-only benchmark: `$1,000` cash, no TQQQ position.
 
 If real broker cash differs, run `manual_cash_set`.
 
@@ -91,7 +90,7 @@ To revive the same Telegram chat, use the same GitHub secrets:
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
 
-Then enable the GitHub Actions workflow and redeploy the Cloudflare scheduler.
+GitHub Actions remains available for manual/Cloudflare dispatch. Native GitHub cron is intentionally disabled so Cloudflare is the only scheduled runner and Telegram does not receive duplicate scheduled reports.
 
 Cloudflare Worker requirements:
 
@@ -107,4 +106,4 @@ Telegram commands:
 - `/daily`
 - `/check`
 
-Inline buttons on BUY/SELL messages are exact-fill sync helpers. The real tracked portfolio is not updated at the bot signal price; after a broker fill, sync with `/bought PRICE SHARES` or `/sold PRICE`. The bot-only benchmark still auto-simulates at bot prices for rules-only comparison.
+Inline buttons on BUY/SELL messages are exact-fill sync helpers. The real tracked portfolio is not updated at the bot signal price; after a broker fill, sync with `/bought PRICE SHARES` or `/sold PRICE`.

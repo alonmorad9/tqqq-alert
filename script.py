@@ -1346,7 +1346,6 @@ def update_bot_strategy_benchmark(ticker):
 def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, force_check_report=False):
     state = load_state()
     ticker = fetch_market_data()
-    bot_strategy = update_bot_strategy_benchmark(ticker)
 
     current_price = float(ticker["Close"].iloc[-1])
     current_high = float(ticker["High"].iloc[-1])
@@ -1692,10 +1691,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
     rebuy_target = last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT) if waiting_for_pullback and last_profit_sell_price else None
     manual_rebuy_target = manual_exit_price * (1 - SWING_REBUY_DROP_PCT) if manual_exit_mode and manual_exit_price else None
     report_date = ticker.index[-1].strftime("%Y-%m-%d")
-    benchmark_guard_cooldown = (
-        bot_strategy.get("last_action") == "benchmark_sell_fresh_entry_guard"
-        and bot_strategy.get("fresh_entry_guard_exit_date") == report_date
-    )
     fresh_guard_cooldown = (
         state.get("last_action") == "sell_all_fresh_entry_guard"
         and state.get("fresh_entry_guard_exit_date") == report_date
@@ -1714,66 +1709,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         position_status = "Waiting for re-entry"
     risk_context_lines = build_risk_context(ticker, current_price, sma200, trailing_stop)
     price_source = ticker.attrs.get("price_source", "daily")
-    strategy_gap = total_value - bot_strategy["total_value"]
-    strategy_gap_pct = (strategy_gap / bot_strategy["total_value"]) * 100 if bot_strategy["total_value"] else 0.0
-    benchmark_rebuy_target = bot_strategy.get("rebuy_target")
-    benchmark_next_profit_target = bot_strategy.get("next_profit_target")
-    benchmark_wait_days = int(bot_strategy.get("pullback_wait_days") or 0)
-    benchmark_rsi_status = "ready" if bot_strategy.get("reentry_rsi_ok") else "too hot"
-    benchmark_open_delay_status = "ready" if bot_strategy.get("entry_open_delay_ok", True) else "waiting"
-    benchmark_last_action = bot_strategy.get("last_action") or bot_strategy.get("action")
-    rules_summary = (
-        f"+{SWING_PROFIT_TARGET_PCT * 100:.0f}% profit, "
-        f"-{HARD_STOP_PCT * 100:.1f}% hard stop, "
-        f"{TRAILING_STOP_PCT * 100:.0f}% trail, "
-        f"-{SWING_REBUY_DROP_PCT * 100:.0f}%/{SWING_REBUY_TIMEOUT_DAYS}d re-entry, "
-        f"{format_reentry_rsi_rule()}, "
-        f"{format_entry_adx_rule()}"
-    )
-    benchmark_lines = [
-        "🧪 Bot-Only Benchmark",
-        "Meaning: what would happen if you followed only bot signals and made no manual moves.",
-        f"Mode:          {bot_strategy['status']}",
-        f"Last Action:   {benchmark_last_action}",
-        f"Cash:          ${bot_strategy['cash']:.2f}",
-        f"Shares:        {bot_strategy['shares']:.4f}",
-        f"📊 Total:        ${bot_strategy['total_value']:.2f}",
-    ]
-    if bot_strategy["position_open"]:
-        benchmark_lines.append(f"Next Profit:   ${benchmark_next_profit_target:.2f} (+{SWING_PROFIT_TARGET_PCT * 100:.0f}%)")
-        benchmark_guard = bot_strategy.get("fresh_entry_guard") or {}
-        if benchmark_guard.get("active") and benchmark_guard.get("stop") is not None:
-            benchmark_lines.append(
-                f"Hard Stop:     ${benchmark_guard['stop']:.2f} "
-                f"(-{HARD_STOP_PCT * 100:.1f}% from entry)"
-            )
-        benchmark_lines.append(f"Rule now: benchmark follows swing rules: {rules_summary}.")
-        benchmark_lines.append("Risk-warning sections are advisory unless the Action line says BUY or SELL.")
-    elif bot_strategy.get("waiting_for_pullback"):
-        benchmark_lines.append(f"Re-buy Target: ${benchmark_rebuy_target:.2f} (-{SWING_REBUY_DROP_PCT * 100:.1f}% from benchmark sell)")
-        benchmark_lines.append(f"Wait Days:     {benchmark_wait_days}/{SWING_REBUY_TIMEOUT_DAYS}")
-        benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
-        benchmark_lines.append(f"ADX Gate:      {format_entry_adx_status(bot_strategy.get('qqq_adx', qqq_adx), bot_strategy.get('entry_adx_ok'))}")
-        benchmark_lines.append(f"Open Delay:    {benchmark_open_delay_status} — no bot buys in first {ENTRY_OPEN_DELAY_MINUTES} market minutes.")
-        if REENTRY_RSI_MAX is None:
-            benchmark_lines.append("Rule now: benchmark waits for pullback or timeout; RSI is not blocking re-entry.")
-        else:
-            benchmark_lines.append("Rule now: benchmark waits for pullback or timeout, and still needs RSI to be ready.")
-    elif bot_strategy.get("waiting_for_early_reentry"):
-        benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
-        benchmark_lines.append(f"ADX Gate:      {format_entry_adx_status(bot_strategy.get('qqq_adx', qqq_adx), bot_strategy.get('entry_adx_ok'))}")
-        if REENTRY_RSI_MAX is None:
-            benchmark_lines.append(f"Rule now: benchmark waits for confirmed recovery above SMA200 and SMA20; RSI is not blocking re-entry.")
-        else:
-            benchmark_lines.append(f"Rule now: benchmark waits for confirmed recovery above SMA200 and SMA20, with RSI ready.")
-    elif benchmark_guard_cooldown:
-        benchmark_lines.append("Rule now: benchmark is in cash after a hard-stop exit and waits for normal re-entry rules.")
-    else:
-        benchmark_lines.append(f"RSI Gate:      {format_reentry_rsi_status(current_rsi, bot_strategy.get('reentry_rsi_ok'))}")
-        benchmark_lines.append(f"ADX Gate:      {format_entry_adx_status(bot_strategy.get('qqq_adx', qqq_adx), bot_strategy.get('entry_adx_ok'))}")
-        benchmark_lines.append("Rule now: benchmark waits for a fresh TQQQ entry signal.")
-    benchmark_lines.append(f"Vs Real Path:   ${strategy_gap:+.2f} ({strategy_gap_pct:+.2f}%)")
-
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
         report_key = f"{ticker.index[-1].strftime('%Y-%m-%d')}:{report_kind or 'daily'}"
@@ -1869,8 +1804,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             f"💼 TQQQ Value:   ${position_value:.2f}",
             f"📊 Total:        ${total_value:.2f}",
             f"{pnl_emoji} TQQQ P&L:     ${pnl:+.2f} ({pnl_pct:+.2f}%)",
-            "─" * 30,
-            *benchmark_lines,
             "─" * 30,
             f"Entry Date:      {state.get('entry_date') or 'Waiting for entry'}",
         ])

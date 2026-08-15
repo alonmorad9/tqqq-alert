@@ -670,7 +670,10 @@ def format_entry_adx_rule():
 def build_reply_markup(action=None):
     keyboard = [
         [{"text": "📊 Daily report"}, {"text": "🔎 Check now"}],
-        [{"text": "📈 Swing digest"}, {"text": "🚨 Swing stops"}],
+        [{"text": "➕ Add trade"}, {"text": "📋 Positions"}],
+        [{"text": "🌅 Opening report"}, {"text": "🌙 Closing report"}],
+        [{"text": "📆 Weekly report"}, {"text": "💡 Ideas scan"}],
+        [{"text": "🚨 Swing stops"}],
         [{"text": "✏️ Sync buy fill"}, {"text": "✏️ Sync sell fill"}],
         [{"text": "💵 Cash sync help"}, {"text": "ℹ️ Button help"}],
     ]

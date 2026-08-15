@@ -116,14 +116,19 @@ Keyboard buttons:
 
 - `Daily report`: queues a full status report now, even if there is no buy/sell signal.
 - `Check now`: queues a compact status result every time, including the current blocker when there is no signal.
-- `Swing digest`: queues the swing tracker daily sync/digest.
+- `Add trade`: adds a manual swing trade to the dashboard after confirmation.
+- `Positions`: lists open swing trades from the dashboard data.
+- `Opening report`: queues the swing tracker opening report.
+- `Closing report`: queues the swing tracker closing journal/report.
+- `Weekly report`: queues the swing tracker weekly open-trades summary.
+- `Ideas scan`: queues the strict strategy-ready ideas scan.
 - `Swing stops`: immediately checks whether any swing trade reached a manual stop-ladder trigger.
 - `Sync buy fill`: shows `/bought PRICE SHARES`.
 - `Sync sell fill`: shows `/sold PRICE`.
 - `Cash sync help`: shows `/cash AMOUNT`.
 - `Button help`: explains the buttons.
 
-Weekly report is not active in this TQQQ swing bot. The active schedule is opening/closing full reports plus 10-minute signal checks.
+TQQQ itself uses Daily/Check plus scheduled signal checks. Opening/Closing/Weekly/Ideas are for the swing tracker repo.
 
 Exact broker fills still require a short command because Telegram buttons cannot collect arbitrary prices. The sync buttons send persistent Telegram messages with the exact command format.
 

@@ -3,7 +3,9 @@ const REPO = "tqqq-alert";
 const WORKFLOW_FILE = "main.yml";
 const SWING_REPO = "swing-tracker-new";
 const SWING_WORKFLOW_FILE = "daily-sync.yml";
+const SWING_IDEAS_WORKFLOW_FILE = "daily-ideas.yml";
 const SWING_TRADES_PATH = "data/trades.json";
+const SWING_PORTFOLIO_PATH = "data/portfolio.json";
 const MARKET_OPEN_MINUTE_UTC = 13 * 60 + 30;
 const MARKET_CLOSE_MINUTE_UTC = 20 * 60;
 
@@ -57,15 +59,44 @@ async function triggerWorkflow(env, inputs = {}) {
   });
 }
 
-async function triggerSwingWorkflow(env) {
+async function triggerSwingWorkflow(env, reportMode = "closing") {
   console.log("Dispatching swing tracker workflow", {
     owner: OWNER,
     repo: SWING_REPO,
     workflow: SWING_WORKFLOW_FILE,
+    reportMode,
   });
 
   const response = await fetch(
     `https://api.github.com/repos/${OWNER}/${SWING_REPO}/actions/workflows/${SWING_WORKFLOW_FILE}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+        "User-Agent": "tqqq-alert-scheduler",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({ ref: "main", inputs: { report_mode: reportMode } }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("Swing GitHub dispatch failed", {
+      status: response.status,
+      body,
+    });
+    throw new Error(`Swing GitHub dispatch failed: ${response.status} ${body}`);
+  }
+
+  console.log("Swing GitHub dispatch succeeded", { status: response.status });
+}
+
+async function triggerSwingIdeasWorkflow(env) {
+  const response = await fetch(
+    `https://api.github.com/repos/${OWNER}/${SWING_REPO}/actions/workflows/${SWING_IDEAS_WORKFLOW_FILE}/dispatches`,
     {
       method: "POST",
       headers: {
@@ -81,14 +112,8 @@ async function triggerSwingWorkflow(env) {
 
   if (!response.ok) {
     const body = await response.text();
-    console.error("Swing GitHub dispatch failed", {
-      status: response.status,
-      body,
-    });
-    throw new Error(`Swing GitHub dispatch failed: ${response.status} ${body}`);
+    throw new Error(`Swing ideas dispatch failed: ${response.status} ${body}`);
   }
-
-  console.log("Swing GitHub dispatch succeeded", { status: response.status });
 }
 
 async function readGitHubJson(env, repo, path) {
@@ -108,6 +133,71 @@ async function readGitHubJson(env, repo, path) {
     throw new Error(`GitHub read failed for ${repo}/${path}: ${response.status} ${body}`);
   }
   return response.json();
+}
+
+async function readGitHubContentJson(env, repo, path, fallback) {
+  const response = await fetch(
+    `https://api.github.com/repos/${OWNER}/${repo}/contents/${path}?ref=main`,
+    {
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+        "User-Agent": "tqqq-alert-scheduler",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+  );
+  if (response.status === 404) return { data: fallback, sha: null };
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub read failed for ${repo}/${path}: ${response.status} ${body}`);
+  }
+  const body = await response.json();
+  const decoded = atob(body.content.replace(/\n/g, ""));
+  return { data: JSON.parse(decoded), sha: body.sha };
+}
+
+async function writeGitHubContentJson(env, repo, path, data, sha, message) {
+  const response = await fetch(
+    `https://api.github.com/repos/${OWNER}/${repo}/contents/${path}`,
+    {
+      method: "PUT",
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+        "User-Agent": "tqqq-alert-scheduler",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({
+        message,
+        content: btoa(unescape(encodeURIComponent(`${JSON.stringify(data, null, 2)}\n`))),
+        branch: "main",
+        ...(sha ? { sha } : {}),
+      }),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`GitHub write failed for ${repo}/${path}: ${response.status} ${body}`);
+  }
+  return response.json();
+}
+
+function fmtMoney(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `$${number.toFixed(2)}` : "n/a";
+}
+
+function tradeSummary({ ticker, shares, entry, stop, target }) {
+  return [
+    `${ticker}`,
+    `Shares: ${shares}`,
+    `Entry: ${fmtMoney(entry)}`,
+    `Stop: ${fmtMoney(stop)}`,
+    `Target: ${fmtMoney(target)}`,
+    `Money spent: ${fmtMoney(Number(shares) * Number(entry))}`,
+  ].join("\n");
 }
 
 async function fetchYahooQuote(symbol) {
@@ -276,11 +366,139 @@ function parseTelegramCommand(text = "") {
   return null;
 }
 
+function addTradeHelpText() {
+  return [
+    "➕ Add a swing trade",
+    "──────────────────────────────",
+    "Send the real broker fill in this format:",
+    "",
+    "TICKER SHARES ENTRY STOP TARGET",
+    "",
+    "Example:",
+    "PENN 52.8541 18.92 17.33 21.18",
+    "",
+    "I will show Add / Cancel before writing anything to the dashboard.",
+  ].join("\n");
+}
+
+function parseAddTrade(text = "") {
+  const parts = text.trim().split(/\s+/);
+  const command = (parts[0] || "").split("@")[0].toLowerCase();
+  const commandMode = ["/add", "/addtrade"].includes(command);
+  if (!commandMode && parts.length !== 5) return null;
+  if (commandMode && parts.length < 6) return { error: addTradeHelpText() };
+
+  const offset = commandMode ? 1 : 0;
+  const ticker = parts[offset].toUpperCase().replace(/[^A-Z0-9.-]/g, "");
+  const shares = Number(parts[offset + 1]);
+  const entry = Number(parts[offset + 2]);
+  const stop = Number(parts[offset + 3]);
+  const target = Number(parts[offset + 4]);
+
+  if (!ticker || !Number.isFinite(shares) || !Number.isFinite(entry) || !Number.isFinite(stop) || !Number.isFinite(target)) {
+    return { error: `I could not parse the trade.\n\n${addTradeHelpText()}` };
+  }
+  if (shares <= 0 || entry <= 0 || stop <= 0 || target <= 0) {
+    return { error: "Shares, entry, stop, and target must all be positive." };
+  }
+  if (stop >= entry) {
+    return { error: "Stop should be below entry for a long swing trade." };
+  }
+  if (target <= entry) {
+    return { error: "Target should be above entry for a long swing trade." };
+  }
+  return { ticker, shares, entry, stop, target };
+}
+
+function encodeTradeCallback(prefix, trade) {
+  return [
+    prefix,
+    trade.ticker,
+    trade.shares,
+    trade.entry,
+    trade.stop,
+    trade.target,
+  ].join("|").slice(0, 64);
+}
+
+function decodeTradeCallback(data) {
+  const [prefix, ticker, shares, entry, stop, target] = String(data || "").split("|");
+  if (prefix !== "add") return null;
+  return {
+    ticker,
+    shares: Number(shares),
+    entry: Number(entry),
+    stop: Number(stop),
+    target: Number(target),
+  };
+}
+
+async function appendSwingTrade(env, trade, from) {
+  const { data: trades, sha: tradesSha } = await readGitHubContentJson(env, SWING_REPO, SWING_TRADES_PATH, []);
+  const { data: portfolio, sha: portfolioSha } = await readGitHubContentJson(env, SWING_REPO, SWING_PORTFOLIO_PATH, { cash: 0 });
+
+  if (trades.some((t) => String(t.ticker).toUpperCase() === trade.ticker && Number(t.entry) === trade.entry && Number(t.shares) === trade.shares)) {
+    return { duplicate: true, portfolio };
+  }
+
+  const now = new Date().toISOString();
+  const moneySpent = +(trade.shares * trade.entry).toFixed(6);
+  trades.push({
+    id: Date.now(),
+    ticker: trade.ticker,
+    entry: trade.entry,
+    stop: trade.stop,
+    target: trade.target,
+    notes: "Added from Telegram. Broker fill is manual and user-confirmed.",
+    date: now,
+    geminiLink: "",
+    perplexityLink: "",
+    sources: [],
+    shares: trade.shares,
+    moneySpent,
+    ladder: [],
+    textSource: { platform: "telegram", name: "Telegram add trade" },
+    telegramAdd: {
+      date: now,
+      fromId: from?.id || null,
+      fromUsername: from?.username || null,
+    },
+  });
+
+  if (portfolio && Number.isFinite(Number(portfolio.cash))) {
+    portfolio.cash = +(Number(portfolio.cash) - moneySpent).toFixed(6);
+  }
+
+  await writeGitHubContentJson(env, SWING_REPO, SWING_TRADES_PATH, trades, tradesSha, `Add ${trade.ticker} trade from Telegram`);
+  await writeGitHubContentJson(env, SWING_REPO, SWING_PORTFOLIO_PATH, portfolio, portfolioSha, `Update cash after Telegram ${trade.ticker} trade`);
+  return { duplicate: false, portfolio };
+}
+
+async function sendSwingPositions(env, chatId) {
+  const trades = await readGitHubJson(env, SWING_REPO, SWING_TRADES_PATH);
+  const openTrades = Array.isArray(trades) ? trades.filter((trade) => trade && trade.ticker) : [];
+  if (!openTrades.length) {
+    await sendTelegram(env, chatId, "No open swing trades in data/trades.json.");
+    return;
+  }
+  await sendTelegram(env, chatId, [
+    "📋 Open swing trades",
+    "──────────────────────────────",
+    ...openTrades.map((trade) => {
+      const shares = Number(trade.shares || 0);
+      return `${trade.ticker}: ${shares.toFixed(4)} shares @ ${fmtMoney(trade.entry)} | stop ${fmtMoney(trade.stop)} | target ${fmtMoney(trade.target)}`;
+    }),
+  ].join("\n"));
+}
+
 function mainKeyboard() {
   return {
     keyboard: [
       [{ text: "📊 Daily report" }, { text: "🔎 Check now" }],
-      [{ text: "📈 Swing digest" }, { text: "🚨 Swing stops" }],
+      [{ text: "➕ Add trade" }, { text: "📋 Positions" }],
+      [{ text: "🌅 Opening report" }, { text: "🌙 Closing report" }],
+      [{ text: "📆 Weekly report" }, { text: "💡 Ideas scan" }],
+      [{ text: "🚨 Swing stops" }],
       [{ text: "✏️ Sync buy fill" }, { text: "✏️ Sync sell fill" }],
       [{ text: "💵 Cash sync help" }, { text: "ℹ️ Button help" }],
     ],
@@ -295,7 +513,12 @@ function commandHelp() {
     "",
     "📊 Daily report — full TQQQ status now.",
     "🔎 Check now — compact TQQQ signal check now.",
-    "📈 Swing digest — run the swing tracker daily report.",
+    "➕ Add trade — add a manual swing trade to the dashboard.",
+    "📋 Positions — list open swing trades.",
+    "🌅 Opening report — run the swing tracker opening report.",
+    "🌙 Closing report — run the swing tracker closing report.",
+    "📆 Weekly report — run the swing weekly summary.",
+    "💡 Ideas scan — run the strict strategy-ready ideas scan.",
     "🚨 Swing stops — check swing tracker stop ladders now.",
     "✏️ Sync buy fill — shows how to record exact broker buy.",
     "✏️ Sync sell fill — shows how to record exact broker sell.",
@@ -368,6 +591,33 @@ async function handleTelegramUpdate(update, env) {
     const callback = update.callback_query;
     const data = callback.data || "";
     const chatId = callback.message?.chat?.id;
+    if (data === "cancel") {
+      await answerCallback(env, callback.id, "Cancelled");
+      await sendTelegram(env, chatId, "Cancelled. No trade was added.");
+      return new Response("ok\n");
+    }
+    const addTrade = decodeTradeCallback(data);
+    if (addTrade) {
+      await answerCallback(env, callback.id, `Adding ${addTrade.ticker}...`);
+      try {
+        const result = await appendSwingTrade(env, addTrade, callback.from);
+        if (result.duplicate) {
+          await sendTelegram(env, chatId, `Already found a matching ${addTrade.ticker} trade. No duplicate was added.`);
+          return new Response("ok\n");
+        }
+        await sendTelegram(env, chatId, [
+          `✅ Added ${addTrade.ticker} to Swing Tracker`,
+          "──────────────────────────────",
+          tradeSummary(addTrade),
+          "Dashboard: refresh/open the tracker and it will appear in Open Trades.",
+          `Cash after update: ${fmtMoney(Number(result.portfolio?.cash))}`,
+        ].join("\n"));
+        return new Response("ok\n");
+      } catch (error) {
+        await sendTelegram(env, chatId, `⚠️ Failed to add ${addTrade.ticker}: ${error.message}`);
+        return new Response("error\n", { status: 500 });
+      }
+    }
     if (data === "confirm_buy") {
       await answerCallback(env, callback.id, "Exact broker fill required.");
       await sendTelegram(env, chatId, "The bot no longer records real buys at the signal price.\n\nAfter your broker order fills, send:\n/bought PRICE SHARES\n\nExample:\n/bought 75.30 13.2802");
@@ -403,7 +653,12 @@ async function handleTelegramUpdate(update, env) {
           "",
           "📊 Daily report: sends a full status report now, even if there is no buy/sell signal.",
           "🔎 Check now: sends a compact result every time. If there is no signal, it explains the current blocker.",
-          "📈 Swing digest: runs the swing tracker Daily Sync and sends Swing Actions/Daily Digest to this chat.",
+          "➕ Add trade: add a manual swing trade to the dashboard after confirmation.",
+          "📋 Positions: list open swing trades.",
+          "🌅 Opening report: run the swing tracker opening report.",
+          "🌙 Closing report: run the swing tracker closing report/digest.",
+          "📆 Weekly report: run the weekly open-trades summary.",
+          "💡 Ideas scan: run the strategy-ready ideas scan.",
           "🚨 Swing stops: immediately checks whether your manual stop ladders need broker updates.",
           "✏️ Sync buy fill: shows /bought PRICE SHARES. Use it after the broker buy fills.",
           "✏️ Sync sell fill: shows /sold PRICE. Use it after the broker sell fills.",
@@ -411,7 +666,7 @@ async function handleTelegramUpdate(update, env) {
           "",
           "Important: BUY/SELL signals do not update your real tracked position automatically. Only exact-fill sync commands update real state.",
           "",
-          "Weekly report: not active in this TQQQ swing bot right now. This bot uses opening/closing full reports plus 10-minute signal checks.",
+          "TQQQ itself uses Daily/Check plus scheduled signal checks. Opening/Closing/Weekly/Ideas are for the swing tracker repo.",
         ].join("\n")
       );
       return new Response("ok\n");
@@ -429,9 +684,9 @@ async function handleTelegramUpdate(update, env) {
       return new Response("queued\n");
     }
     if (data === "run_swing_daily") {
-      await triggerSwingWorkflow(env);
-      await answerCallback(env, callback.id, "Queued swing digest.");
-      await sendTelegram(env, chatId, "Queued 📈 Swing digest. It should arrive after the swing tracker Daily Sync finishes.");
+      await triggerSwingWorkflow(env, "closing");
+      await answerCallback(env, callback.id, "Queued closing report.");
+      await sendTelegram(env, chatId, "Queued 🌙 Closing report. It should arrive after the swing tracker Daily Sync finishes.");
       return new Response("queued\n");
     }
     if (data === "run_swing_stops") {
@@ -459,9 +714,37 @@ async function handleTelegramUpdate(update, env) {
     return new Response("queued\n");
   }
 
-  if (body === "📈 Swing digest") {
-    await triggerSwingWorkflow(env);
-    await sendTelegram(env, chatId, "Queued 📈 Swing digest. It should arrive after the swing tracker Daily Sync finishes.");
+  if (body === "➕ Add trade") {
+    await sendTelegram(env, chatId, addTradeHelpText());
+    return new Response("ok\n");
+  }
+
+  if (body === "📋 Positions") {
+    await sendSwingPositions(env, chatId);
+    return new Response("ok\n");
+  }
+
+  if (body === "🌅 Opening report") {
+    await triggerSwingWorkflow(env, "opening");
+    await sendTelegram(env, chatId, "Queued 🌅 Opening report. It should arrive after the swing tracker Daily Sync finishes.");
+    return new Response("queued\n");
+  }
+
+  if (body === "🌙 Closing report") {
+    await triggerSwingWorkflow(env, "closing");
+    await sendTelegram(env, chatId, "Queued 🌙 Closing report. It should arrive after the swing tracker Daily Sync finishes.");
+    return new Response("queued\n");
+  }
+
+  if (body === "📆 Weekly report") {
+    await triggerSwingWorkflow(env, "weekly");
+    await sendTelegram(env, chatId, "Queued 📆 Weekly report. It should arrive after the swing tracker Daily Sync finishes.");
+    return new Response("queued\n");
+  }
+
+  if (body === "💡 Ideas scan") {
+    await triggerSwingIdeasWorkflow(env);
+    await sendTelegram(env, chatId, "Queued 💡 Ideas scan. It should send strategy-ready ideas when GitHub Actions finishes.");
     return new Response("queued\n");
   }
 
@@ -489,6 +772,27 @@ async function handleTelegramUpdate(update, env) {
   if (body === "ℹ️ Button help") {
     await sendTelegram(env, chatId, commandHelp());
     return new Response("ok\n");
+  }
+
+  const parsedTrade = parseAddTrade(body);
+  if (parsedTrade?.error) {
+    await sendTelegram(env, chatId, parsedTrade.error);
+    return new Response("bad trade\n");
+  }
+  if (parsedTrade) {
+    await sendTelegram(env, chatId, [
+      "Review new swing trade",
+      "──────────────────────────────",
+      tradeSummary(parsedTrade),
+      "",
+      "Confirm only if this matches your real broker fill.",
+    ].join("\n"), {
+      inline_keyboard: [[
+        { text: `Add ${parsedTrade.ticker}`, callback_data: encodeTradeCallback("add", parsedTrade) },
+        { text: "Cancel", callback_data: "cancel" },
+      ]],
+    });
+    return new Response("confirm trade\n");
   }
 
   if (!text.startsWith("/")) {
@@ -522,8 +826,8 @@ async function handleTelegramUpdate(update, env) {
   }
 
   if (text.startsWith("/swing")) {
-    await triggerSwingWorkflow(env);
-    await sendTelegram(env, chatId, "Queued 📈 Swing digest. It should arrive after the swing tracker Daily Sync finishes.");
+    await triggerSwingWorkflow(env, "closing");
+    await sendTelegram(env, chatId, "Queued 🌙 Closing report. It should arrive after the swing tracker Daily Sync finishes.");
     return new Response("queued\n");
   }
 

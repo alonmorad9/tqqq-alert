@@ -123,7 +123,12 @@ Telegram uses one persistent keyboard:
 - `Sync sell fill`: reminds you to send `/sold PRICE`.
 - `Daily report`: queues a full Telegram report.
 - `Check now`: queues a compact check result.
-- `Swing digest`: queues the swing tracker daily report.
+- `Add trade`: adds a manual swing trade to the dashboard after confirmation.
+- `Positions`: lists open swing trades from the dashboard data.
+- `Opening report`: queues the swing tracker opening report.
+- `Closing report`: queues the swing tracker closing report/digest.
+- `Weekly report`: queues the swing tracker weekly summary.
+- `Ideas scan`: queues the strict strategy-ready ideas scan.
 - `Swing stops`: checks swing tracker stop ladders now.
 - `Cash sync help`: shows `/cash AMOUNT`.
 - `Button help`: explains what each button does.

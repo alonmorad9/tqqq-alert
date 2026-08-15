@@ -675,7 +675,7 @@ def build_reply_markup(action=None):
         [{"text": "📆 Weekly report"}, {"text": "💡 Ideas scan"}],
         [{"text": "🚨 Swing stops"}],
         [{"text": "✏️ Sync buy fill"}, {"text": "✏️ Sync sell fill"}],
-        [{"text": "💵 Cash sync help"}, {"text": "ℹ️ Button help"}],
+        [{"text": "💵 Cash sync help"}, {"text": "ℹ️ Help"}],
     ]
     if action and "BUY SIGNAL" in action:
         keyboard.insert(0, [{"text": "✏️ Sync buy fill"}])

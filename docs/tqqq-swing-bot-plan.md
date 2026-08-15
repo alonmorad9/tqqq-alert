@@ -131,7 +131,7 @@ Telegram uses one persistent keyboard:
 - `Ideas scan`: queues the strict strategy-ready ideas scan.
 - `Swing stops`: checks swing tracker stop ladders now.
 - `Cash sync help`: shows `/cash AMOUNT`.
-- `Button help`: explains what each button does.
+- `Help`: explains what each button does.
 
 Telegram buttons cannot enter an exact custom broker price by themselves. Sync buttons send persistent chat messages with examples. For exact fills, use `/bought PRICE SHARES` or `/sold PRICE`; there is no bot-price auto-fill for the real portfolio.
 

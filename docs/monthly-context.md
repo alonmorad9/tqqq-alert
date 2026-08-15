@@ -126,7 +126,7 @@ Keyboard buttons:
 - `Sync buy fill`: shows `/bought PRICE SHARES`.
 - `Sync sell fill`: shows `/sold PRICE`.
 - `Cash sync help`: shows `/cash AMOUNT`.
-- `Button help`: explains the buttons.
+- `Help`: explains the buttons.
 
 TQQQ itself uses Daily/Check plus scheduled signal checks. Opening/Closing/Weekly/Ideas are for the swing tracker repo.
 

@@ -500,7 +500,7 @@ function mainKeyboard() {
       [{ text: "📆 Weekly report" }, { text: "💡 Ideas scan" }],
       [{ text: "🚨 Swing stops" }],
       [{ text: "✏️ Sync buy fill" }, { text: "✏️ Sync sell fill" }],
-      [{ text: "💵 Cash sync help" }, { text: "ℹ️ Button help" }],
+      [{ text: "💵 Cash sync help" }, { text: "ℹ️ Help" }],
     ],
     resize_keyboard: true,
     is_persistent: true,
@@ -523,7 +523,7 @@ function commandHelp() {
     "✏️ Sync buy fill — shows how to record exact broker buy.",
     "✏️ Sync sell fill — shows how to record exact broker sell.",
     "💵 Cash sync help — shows how to update tracked cash.",
-    "ℹ️ Button help — shows this message again.",
+    "ℹ️ Help — shows this message again.",
     "",
     "Exact fills still need typed values:",
     "/bought PRICE SHARES",
@@ -769,7 +769,7 @@ async function handleTelegramUpdate(update, env) {
     return new Response("ok\n");
   }
 
-  if (body === "ℹ️ Button help") {
+  if (body === "ℹ️ Button help" || body === "ℹ️ Help") {
     await sendTelegram(env, chatId, commandHelp());
     return new Response("ok\n");
   }

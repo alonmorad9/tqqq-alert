@@ -276,21 +276,42 @@ function parseTelegramCommand(text = "") {
   return null;
 }
 
+function mainKeyboard() {
+  return {
+    keyboard: [
+      [{ text: "📊 Daily report" }, { text: "🔎 Check now" }],
+      [{ text: "📈 Swing digest" }, { text: "🚨 Swing stops" }],
+      [{ text: "✏️ Sync buy fill" }, { text: "✏️ Sync sell fill" }],
+      [{ text: "💵 Cash sync help" }, { text: "ℹ️ Button help" }],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
+
 function commandHelp() {
   return [
-    "TQQQ bot commands:",
-    "/bought PRICE SHARES — sync exact broker buy",
-    "/sold PRICE — sync exact broker sell",
-    "/cash AMOUNT — sync cash bucket",
-    "/daily — send full report",
-    "/check — run signal check",
-    "/swing — run swing trade digest",
-    "/swingstops — check swing stop ladders now",
-    "/whoami — show this Telegram chat id",
+    "TQQQ Telegram keyboard:",
+    "",
+    "📊 Daily report — full TQQQ status now.",
+    "🔎 Check now — compact TQQQ signal check now.",
+    "📈 Swing digest — run the swing tracker daily report.",
+    "🚨 Swing stops — check swing tracker stop ladders now.",
+    "✏️ Sync buy fill — shows how to record exact broker buy.",
+    "✏️ Sync sell fill — shows how to record exact broker sell.",
+    "💵 Cash sync help — shows how to update tracked cash.",
+    "ℹ️ Button help — shows this message again.",
+    "",
+    "Exact fills still need typed values:",
+    "/bought PRICE SHARES",
+    "/sold PRICE",
+    "/cash AMOUNT",
+    "",
+    "/whoami — show this Telegram chat id.",
   ].join("\n");
 }
 
-async function sendTelegram(env, chatId, text) {
+async function sendTelegram(env, chatId, text, replyMarkup = mainKeyboard()) {
   if (!env.TELEGRAM_TOKEN || !chatId) {
     console.log("Skipping Telegram response: TELEGRAM_TOKEN or chatId missing");
     return;
@@ -299,7 +320,7 @@ async function sendTelegram(env, chatId, text) {
   await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify({ chat_id: chatId, text, reply_markup: replyMarkup }),
   });
 }
 
@@ -423,7 +444,52 @@ async function handleTelegramUpdate(update, env) {
 
   const message = update.message || update.edited_message;
   const text = message?.text || "";
+  const body = text.trim();
   const chatId = message?.chat?.id;
+
+  if (body === "📊 Daily report") {
+    await triggerWorkflow(env, { mode: "daily" });
+    await sendTelegram(env, chatId, "Queued 📊 Daily report. It should arrive after GitHub Actions finishes.");
+    return new Response("queued\n");
+  }
+
+  if (body === "🔎 Check now") {
+    await triggerWorkflow(env, { mode: "check" });
+    await sendTelegram(env, chatId, "Queued 🔎 Check now. A compact result should arrive after GitHub Actions finishes.");
+    return new Response("queued\n");
+  }
+
+  if (body === "📈 Swing digest") {
+    await triggerSwingWorkflow(env);
+    await sendTelegram(env, chatId, "Queued 📈 Swing digest. It should arrive after the swing tracker Daily Sync finishes.");
+    return new Response("queued\n");
+  }
+
+  if (body === "🚨 Swing stops") {
+    const result = await checkSwingStopLadders(env, { force: true, chatId });
+    await sendTelegram(env, chatId, `Checked 🚨 Swing stops now: ${result.checked || 0} ladder trade(s), ${result.alerts || 0} alert(s).`);
+    return new Response("ok\n");
+  }
+
+  if (body === "✏️ Sync buy fill") {
+    await sendTelegram(env, chatId, "Sync buy fill:\nRecords your exact broker buy price and share count, then queues a fresh status report.\n\nSend:\n/bought PRICE SHARES\n\nExample:\n/bought 75.30 13.2802");
+    return new Response("ok\n");
+  }
+
+  if (body === "✏️ Sync sell fill") {
+    await sendTelegram(env, chatId, "Sync sell fill:\nRecords your exact broker sell price, moves the real state to cash/manual safety mode, then queues a fresh status report.\n\nSend:\n/sold PRICE\n\nExample:\n/sold 82.10");
+    return new Response("ok\n");
+  }
+
+  if (body === "💵 Cash sync help") {
+    await sendTelegram(env, chatId, "To sync the TQQQ cash bucket, send:\n/cash AMOUNT\n\nExample:\n/cash 1000");
+    return new Response("ok\n");
+  }
+
+  if (body === "ℹ️ Button help") {
+    await sendTelegram(env, chatId, commandHelp());
+    return new Response("ok\n");
+  }
 
   if (!text.startsWith("/")) {
     return new Response("ignored\n");

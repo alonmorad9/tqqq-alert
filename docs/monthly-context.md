@@ -110,9 +110,9 @@ Telegram sync shortcuts, after the Cloudflare webhook is configured:
 - `/swing`: queue the swing tracker daily digest.
 - `/swingstops`: immediately check swing trade manual stop ladders.
 
-Signal buttons are sync helpers only. BUY/SELL alerts do not update the real tracked state until `/bought PRICE SHARES` or `/sold PRICE` is sent.
+The persistent Telegram keyboard is the main control panel. BUY/SELL alerts do not update the real tracked state until `/bought PRICE SHARES` or `/sold PRICE` is sent.
 
-Standard buttons:
+Keyboard buttons:
 
 - `Daily report`: queues a full status report now, even if there is no buy/sell signal.
 - `Check now`: queues a compact status result every time, including the current blocker when there is no signal.
@@ -125,7 +125,7 @@ Standard buttons:
 
 Weekly report is not active in this TQQQ swing bot. The active schedule is opening/closing full reports plus 10-minute signal checks.
 
-Exact broker fills still require a short command because Telegram buttons cannot collect arbitrary prices. Help buttons send persistent Telegram messages with the exact command format.
+Exact broker fills still require a short command because Telegram buttons cannot collect arbitrary prices. The sync buttons send persistent Telegram messages with the exact command format.
 
 ## Telegram Message Meaning
 

@@ -668,32 +668,21 @@ def format_entry_adx_rule():
 
 
 def build_reply_markup(action=None):
-    signal_rows = []
+    keyboard = [
+        [{"text": "📊 Daily report"}, {"text": "🔎 Check now"}],
+        [{"text": "📈 Swing digest"}, {"text": "🚨 Swing stops"}],
+        [{"text": "✏️ Sync buy fill"}, {"text": "✏️ Sync sell fill"}],
+        [{"text": "💵 Cash sync help"}, {"text": "ℹ️ Button help"}],
+    ]
     if action and "BUY SIGNAL" in action:
-        signal_rows.append([
-            {"text": "✏️ Sync buy fill", "callback_data": "help_bought"},
-        ])
+        keyboard.insert(0, [{"text": "✏️ Sync buy fill"}])
     elif action and "SELL" in action:
-        signal_rows.append([
-            {"text": "✏️ Sync sell fill", "callback_data": "help_sold"},
-        ])
+        keyboard.insert(0, [{"text": "✏️ Sync sell fill"}])
 
     return {
-        "inline_keyboard": [
-            *signal_rows,
-            [
-                {"text": "📊 Daily report", "callback_data": "run_daily"},
-                {"text": "🔎 Check now", "callback_data": "run_check"},
-            ],
-            [
-                {"text": "📈 Swing digest", "callback_data": "run_swing_daily"},
-                {"text": "🚨 Swing stops", "callback_data": "run_swing_stops"},
-            ],
-            [
-                {"text": "💵 Cash sync help", "callback_data": "help_cash"},
-                {"text": "ℹ️ Button help", "callback_data": "help_buttons"},
-            ],
-        ]
+        "keyboard": keyboard,
+        "resize_keyboard": True,
+        "is_persistent": True,
     }
 
 
@@ -1067,6 +1056,42 @@ def build_parabolic_warning_lines(ticker):
         f"Level:         {level} — Watch means TQQQ is stretched; Low means no unusual spike pressure.",
         f"Active:        {active_text}",
         f"5d / 10d Ret:  {ret5:+.1%} / {ret10:+.1%} — shows how fast TQQQ has moved recently.",
+    ]
+
+
+def build_daily_market_summary(ticker, early_warning, support_watch):
+    row = ticker.iloc[-1]
+    rsi14 = float(row["RSI14"])
+    atr14 = float(row["ATR14"])
+    current_price = float(row["Close"])
+    atr_pct = (atr14 / current_price) * 100 if current_price else 0.0
+    qqq_close = float(row["QQQ_Close"])
+    qqq_ema21 = float(row["QQQ_EMA21"])
+    tqqq_sma50 = float(row["SMA50"])
+    parabolic = calculate_parabolic_stretch(ticker)
+
+    warning_lines = []
+    if early_warning["active"]:
+        warning_lines.append(
+            f"Early drop: {early_warning['level']} ({early_warning['score']}/{len(early_warning.get('checks', [])) or 5}) — "
+            f"{', '.join(early_warning['active'])}"
+        )
+    if parabolic["active"]:
+        warning_lines.append(f"Parabolic stretch: {', '.join(parabolic['active'])}")
+    if support_watch["confirm_count"]:
+        warning_lines.append(
+            f"Support break: {support_watch['level']} "
+            f"({support_watch['confirm_count']}/{support_watch['confirm_required']})"
+        )
+
+    if not warning_lines:
+        warning_lines.append("None active")
+
+    return [
+        "🧭 Strategy / Warnings",
+        f"Core rules: +{SWING_PROFIT_TARGET_PCT * 100:.0f}% profit target, -{HARD_STOP_PCT * 100:.0f}% hard stop, {TRAILING_STOP_PCT * 100:.0f}% trailing stop, QQQ ADX ≥ {ENTRY_QQQ_ADX_MIN}.",
+        f"Market read: RSI {rsi14:.1f}, ATR ${atr14:.2f} ({atr_pct:.1f}%), QQQ {'above' if qqq_close >= qqq_ema21 else 'below'} EMA21, TQQQ {'above' if current_price >= tqqq_sma50 else 'below'} SMA50.",
+        f"Warnings: {' | '.join(warning_lines)}.",
     ]
 
 
@@ -1707,7 +1732,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         position_status = "Waiting for swing re-entry"
     else:
         position_status = "Waiting for re-entry"
-    risk_context_lines = build_risk_context(ticker, current_price, sma200, trailing_stop)
     price_source = ticker.attrs.get("price_source", "daily")
     # ── DAILY REPORT (full message) ───────────────────────
     if daily_report:
@@ -1727,8 +1751,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             "─" * 30,
             f"Action: {action}",
             *( [f"Why: {wait_reason}"] if wait_reason else [] ),
-            "Read first: follow the Action line. The risk sections below explain context unless they explicitly create the Action.",
-            "Buttons: Daily/Check are safe one-tap refreshes. On BUY/SELL signals, use Sync fill or /bought /sold; real state never assumes a market fill.",
+            "Follow the Action line. Real broker fills stay manual; after a fill use Sync fill or /bought /sold.",
             *instruction_lines,
             "─" * 30,
             f"Mode:          {position_status}",
@@ -1746,9 +1769,6 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             lines.append(
                 f"🛡️ Hard Stop:    ${fresh_entry_guard['stop']:.2f}  "
                 f"(-{HARD_STOP_PCT * 100:.1f}% from entry)"
-            )
-            lines.append(
-                "   Meaning: permanent loss limit for this swing; if hit, Action becomes SELL."
             )
         if next_profit_target:
             next_profit_pct = int(round(SWING_PROFIT_TARGET_PCT * 100))
@@ -1773,21 +1793,13 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         if not position_open:
             lines.append(f"🧊 Re-entry RSI: {format_reentry_rsi_status(current_rsi, reentry_rsi_ok)}")
             lines.append(f"📐 QQQ ADX Gate: {format_entry_adx_status(qqq_adx, entry_adx_ok)}")
-            lines.append("   Meaning: ADX measures Nasdaq trend strength. If it is too low, the market is likely choppy, so the bot waits.")
             if cash > 0:
                 lines.append("🅿️ Waiting Asset: Cash")
-                lines.append("   Plan: stay in cash until the next TQQQ buy/re-buy signal.")
             else:
                 lines.append("   Plan: no tracked cash. Run manual_cash_set after updating broker cash.")
         lines.extend([
             "─" * 30,
-            *risk_context_lines,
-            "─" * 30,
-            *build_parabolic_warning_lines(ticker),
-            "─" * 30,
-            *build_early_warning_lines(early_warning),
-            "─" * 30,
-            *build_support_break_watch_lines(support_watch),
+            *build_daily_market_summary(ticker, early_warning, support_watch),
         ])
         if manual_exit_mode:
             lines.append(f"Current controller: manual safety mode; re-buy waits for pullback, {MANUAL_REBUY_TIMEOUT_DAYS}-day timeout, or confirmed SMA200 reset; {format_reentry_rsi_rule()}.")
@@ -1827,7 +1839,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
                 if force_check_report and not is_signal
                 else "Read first: follow this Action. Extra risk notes are context only unless this is a SELL/BUY signal."
             ),
-            "Buttons: Daily gives a full report; Check gives this compact result; Sync fill shows the exact-fill command.",
+            "Keyboard: use Daily/Check for refreshes; Sync fill buttons show the exact-fill command.",
             *instruction_lines,
             "─" * 30,
             f"💰 Price:      ${current_price:.2f}",

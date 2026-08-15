@@ -117,16 +117,18 @@ Report types:
 - `Check now`: compact status result. It checks the strategy now and sends a short message every time, including the current blocker when there is no signal.
 - Weekly report: not active in this TQQQ swing bot. The active schedule is opening/closing full reports plus 10-minute signal checks.
 
-Signal messages include buttons:
+Telegram uses one persistent keyboard:
 
 - `Sync buy fill`: reminds you to send `/bought PRICE SHARES`.
 - `Sync sell fill`: reminds you to send `/sold PRICE`.
 - `Daily report`: queues a full Telegram report.
 - `Check now`: queues a compact check result.
+- `Swing digest`: queues the swing tracker daily report.
+- `Swing stops`: checks swing tracker stop ladders now.
 - `Cash sync help`: shows `/cash AMOUNT`.
 - `Button help`: explains what each button does.
 
-Telegram inline buttons cannot enter an exact custom broker price by themselves. Help buttons send persistent chat messages with examples. For exact fills, use `/bought PRICE SHARES` or `/sold PRICE`; there is no bot-price auto-fill for the real portfolio.
+Telegram buttons cannot enter an exact custom broker price by themselves. Sync buttons send persistent chat messages with examples. For exact fills, use `/bought PRICE SHARES` or `/sold PRICE`; there is no bot-price auto-fill for the real portfolio.
 
 ## Revival Steps
 

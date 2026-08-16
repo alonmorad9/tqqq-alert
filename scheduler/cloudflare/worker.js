@@ -501,10 +501,15 @@ function mainKeyboard() {
       [{ text: "🚨 Swing stops" }],
       [{ text: "✏️ Sync buy fill" }, { text: "✏️ Sync sell fill" }],
       [{ text: "💵 Cash sync help" }, { text: "ℹ️ Help" }],
+      [{ text: "⌨️ Hide keyboard" }],
     ],
     resize_keyboard: true,
     is_persistent: true,
   };
+}
+
+function removeKeyboard() {
+  return { remove_keyboard: true };
 }
 
 function commandHelp() {
@@ -524,6 +529,7 @@ function commandHelp() {
     "✏️ Sync sell fill — shows how to record exact broker sell.",
     "💵 Cash sync help — shows how to update tracked cash.",
     "ℹ️ Help — shows this message again.",
+    "⌨️ Hide keyboard — closes the big Telegram keyboard. Send /keyboard, /help, or /start to bring it back.",
     "",
     "Exact fills still need typed values:",
     "/bought PRICE SHARES",
@@ -771,6 +777,16 @@ async function handleTelegramUpdate(update, env) {
 
   if (body === "ℹ️ Button help" || body === "ℹ️ Help") {
     await sendTelegram(env, chatId, commandHelp());
+    return new Response("ok\n");
+  }
+
+  if (body === "⌨️ Hide keyboard" || body === "/hide") {
+    await sendTelegram(env, chatId, "Keyboard hidden. Send /keyboard, /help, or /start when you want the buttons back.", removeKeyboard());
+    return new Response("ok\n");
+  }
+
+  if (body === "/keyboard") {
+    await sendTelegram(env, chatId, "Keyboard restored.", mainKeyboard());
     return new Response("ok\n");
   }
 

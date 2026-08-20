@@ -4,6 +4,7 @@ const WORKFLOW_FILE = "main.yml";
 const SWING_REPO = "swing-tracker-new";
 const SWING_WORKFLOW_FILE = "daily-sync.yml";
 const SWING_IDEAS_WORKFLOW_FILE = "daily-ideas.yml";
+const SWING_ALTINDEX_WORKFLOW_FILE = "daily-altindex-report.yml";
 const SWING_INTRADAY_WORKFLOW_FILE = "intraday-swing-alerts.yml";
 const SWING_TRADES_PATH = "data/trades.json";
 const SWING_PORTFOLIO_PATH = "data/portfolio.json";
@@ -114,6 +115,28 @@ async function triggerSwingIdeasWorkflow(env) {
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Swing ideas dispatch failed: ${response.status} ${body}`);
+  }
+}
+
+async function triggerSwingAltIndexWorkflow(env) {
+  const response = await fetch(
+    `https://api.github.com/repos/${OWNER}/${SWING_REPO}/actions/workflows/${SWING_ALTINDEX_WORKFLOW_FILE}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+        "User-Agent": "tqqq-alert-scheduler",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({ ref: "main" }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Swing AltIndex dispatch failed: ${response.status} ${body}`);
   }
 }
 
@@ -550,7 +573,7 @@ function commandHelp() {
     "🌅 Opening report — run the swing tracker opening report.",
     "🌙 Closing report — run the swing tracker closing report.",
     "📆 Weekly report — run the swing weekly summary.",
-    "💡 Ideas scan — run the strict strategy-ready ideas scan.",
+    "💡 Ideas scan — run strict strategy ideas plus AltIndex best-now.",
     "🚨 Swing stops — run the real-time hardcoded swing alert check now.",
     "✏️ Sync buy fill — shows how to record exact broker buy.",
     "✏️ Sync sell fill — shows how to record exact broker sell.",
@@ -691,7 +714,7 @@ async function handleTelegramUpdate(update, env) {
           "🌅 Opening report: run the swing tracker opening report.",
           "🌙 Closing report: run the swing tracker closing report/digest.",
           "📆 Weekly report: run the weekly open-trades summary.",
-          "💡 Ideas scan: run the strategy-ready ideas scan.",
+          "💡 Ideas scan: run the strategy-ready ideas scan and AltIndex best-now scan.",
           "🚨 Swing stops: immediately runs the hardcoded swing alert check for stop hits, target hits, raised active stops, near-stop risk, and coded breaks.",
           "✏️ Sync buy fill: shows /bought PRICE SHARES. Use it after the broker buy fills.",
           "✏️ Sync sell fill: shows /sold PRICE. Use it after the broker sell fills.",
@@ -776,8 +799,8 @@ async function handleTelegramUpdate(update, env) {
   }
 
   if (body === "💡 Ideas scan") {
-    await triggerSwingIdeasWorkflow(env);
-    await sendTelegram(env, chatId, "Queued 💡 Ideas scan. It should send strategy-ready ideas when GitHub Actions finishes.");
+    await Promise.all([triggerSwingIdeasWorkflow(env), triggerSwingAltIndexWorkflow(env)]);
+    await sendTelegram(env, chatId, "Queued 💡 Ideas scan + AltIndex best-now scan. Each will message when GitHub Actions finishes.");
     return new Response("queued\n");
   }
 

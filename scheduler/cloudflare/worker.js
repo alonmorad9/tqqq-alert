@@ -258,8 +258,12 @@ function isWeekday(now = new Date()) {
 
 function isMarketWindow(now = new Date()) {
   if (!isWeekday(now)) return false;
+  const month = now.getUTCMonth() + 1;
+  const daylightSavingSeason = month >= 3 && month <= 10;
+  const openMinute = daylightSavingSeason ? MARKET_OPEN_MINUTE_UTC : 14 * 60 + 30;
+  const closeMinute = daylightSavingSeason ? MARKET_CLOSE_MINUTE_UTC : 21 * 60;
   const minute = now.getUTCHours() * 60 + now.getUTCMinutes();
-  return minute >= MARKET_OPEN_MINUTE_UTC && minute <= MARKET_CLOSE_MINUTE_UTC;
+  return minute >= openMinute && minute <= closeMinute;
 }
 
 function manualLadderStopDue(trade, quote) {
@@ -899,7 +903,7 @@ export default {
     });
     ctx.waitUntil(Promise.allSettled([
       triggerWorkflow(env, { mode: "auto", schedule: event.cron }),
-      event.cron.startsWith("*/10 ")
+      event.cron.startsWith("*/10 ") && isMarketWindow(new Date(event.scheduledTime))
         ? triggerSwingIntradayWorkflow(env)
         : Promise.resolve({ skipped: "not_intraday_cron" }),
     ]));

@@ -4,6 +4,7 @@ const WORKFLOW_FILE = "main.yml";
 const SWING_REPO = "swing-tracker-new";
 const SWING_WORKFLOW_FILE = "daily-sync.yml";
 const SWING_IDEAS_WORKFLOW_FILE = "daily-ideas.yml";
+const SWING_INTRADAY_WORKFLOW_FILE = "intraday-swing-alerts.yml";
 const SWING_TRADES_PATH = "data/trades.json";
 const SWING_PORTFOLIO_PATH = "data/portfolio.json";
 const MARKET_OPEN_MINUTE_UTC = 13 * 60 + 30;
@@ -113,6 +114,28 @@ async function triggerSwingIdeasWorkflow(env) {
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Swing ideas dispatch failed: ${response.status} ${body}`);
+  }
+}
+
+async function triggerSwingIntradayWorkflow(env) {
+  const response = await fetch(
+    `https://api.github.com/repos/${OWNER}/${SWING_REPO}/actions/workflows/${SWING_INTRADAY_WORKFLOW_FILE}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+        "User-Agent": "tqqq-alert-scheduler",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({ ref: "main" }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Swing intraday dispatch failed: ${response.status} ${body}`);
   }
 }
 
@@ -524,7 +547,7 @@ function commandHelp() {
     "🌙 Closing report — run the swing tracker closing report.",
     "📆 Weekly report — run the swing weekly summary.",
     "💡 Ideas scan — run the strict strategy-ready ideas scan.",
-    "🚨 Swing stops — check swing tracker stop ladders now.",
+    "🚨 Swing stops — run the real-time hardcoded swing alert check now.",
     "✏️ Sync buy fill — shows how to record exact broker buy.",
     "✏️ Sync sell fill — shows how to record exact broker sell.",
     "💵 Cash sync help — shows how to update tracked cash.",
@@ -665,7 +688,7 @@ async function handleTelegramUpdate(update, env) {
           "🌙 Closing report: run the swing tracker closing report/digest.",
           "📆 Weekly report: run the weekly open-trades summary.",
           "💡 Ideas scan: run the strategy-ready ideas scan.",
-          "🚨 Swing stops: immediately checks whether your manual stop ladders need broker updates.",
+          "🚨 Swing stops: immediately runs the hardcoded swing alert check for stop hits, target hits, raised active stops, near-stop risk, and coded breaks.",
           "✏️ Sync buy fill: shows /bought PRICE SHARES. Use it after the broker buy fills.",
           "✏️ Sync sell fill: shows /sold PRICE. Use it after the broker sell fills.",
           "💵 Cash sync help: shows how to update tracked cash.",
@@ -696,10 +719,10 @@ async function handleTelegramUpdate(update, env) {
       return new Response("queued\n");
     }
     if (data === "run_swing_stops") {
-      const result = await checkSwingStopLadders(env, { force: true, chatId });
-      await answerCallback(env, callback.id, `Swing stops checked: ${result.alerts || 0} alert(s).`);
-      await sendTelegram(env, chatId, `Checked 🚨 Swing stops now: ${result.checked || 0} ladder trade(s), ${result.alerts || 0} alert(s).`);
-      return new Response("ok\n");
+      await triggerSwingIntradayWorkflow(env);
+      await answerCallback(env, callback.id, "Queued swing alert check.");
+      await sendTelegram(env, chatId, "Queued 🚨 Swing stops. It will send a Telegram alert only if a new hardcoded urgent action exists.");
+      return new Response("queued\n");
     }
   }
 
@@ -755,9 +778,9 @@ async function handleTelegramUpdate(update, env) {
   }
 
   if (body === "🚨 Swing stops") {
-    const result = await checkSwingStopLadders(env, { force: true, chatId });
-    await sendTelegram(env, chatId, `Checked 🚨 Swing stops now: ${result.checked || 0} ladder trade(s), ${result.alerts || 0} alert(s).`);
-    return new Response("ok\n");
+    await triggerSwingIntradayWorkflow(env);
+    await sendTelegram(env, chatId, "Queued 🚨 Swing stops. It will send a Telegram alert only if a new hardcoded urgent action exists.");
+    return new Response("queued\n");
   }
 
   if (body === "✏️ Sync buy fill") {
@@ -876,7 +899,9 @@ export default {
     });
     ctx.waitUntil(Promise.allSettled([
       triggerWorkflow(env, { mode: "auto", schedule: event.cron }),
-      checkSwingStopLadders(env),
+      event.cron.startsWith("*/10 ")
+        ? triggerSwingIntradayWorkflow(env)
+        : Promise.resolve({ skipped: "not_intraday_cron" }),
     ]));
   },
 

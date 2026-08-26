@@ -289,6 +289,22 @@ function isMarketWindow(now = new Date()) {
   return minute >= openMinute && minute <= closeMinute;
 }
 
+function isTqqqReportWindow(now = new Date()) {
+  if (!isWeekday(now)) return false;
+  const month = now.getUTCMonth() + 1;
+  const daylightSavingSeason = month >= 3 && month <= 10;
+  const openMinute = daylightSavingSeason ? MARKET_OPEN_MINUTE_UTC : 14 * 60 + 30;
+  const closeMinute = daylightSavingSeason ? MARKET_CLOSE_MINUTE_UTC : 21 * 60;
+  const minute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  return minute === openMinute + 15 || minute === closeMinute - 15;
+}
+
+function shouldDispatchTqqqSchedule(cron, scheduledAt = new Date()) {
+  if (cron.startsWith("*/10 ")) return isMarketWindow(scheduledAt);
+  if (cron.startsWith("45 ")) return isTqqqReportWindow(scheduledAt);
+  return false;
+}
+
 function manualLadderStopDue(trade, quote) {
   const ladder = Array.isArray(trade.ladder) ? trade.ladder : [];
   const currentStop = typeof trade.stop === "number" && isFinite(trade.stop) ? trade.stop : null;
@@ -920,16 +936,25 @@ async function handleTelegramUpdate(update, env) {
 
 export default {
   async scheduled(event, env, ctx) {
+    const scheduledAt = new Date(event.scheduledTime);
+    const shouldDispatchTqqq = shouldDispatchTqqqSchedule(event.cron, scheduledAt);
     console.log("Scheduled trigger fired", {
       cron: event.cron,
       scheduledTime: event.scheduledTime,
+      shouldDispatchTqqq,
     });
-    ctx.waitUntil(Promise.allSettled([
-      triggerWorkflow(env, { mode: "auto", schedule: event.cron }),
-      event.cron.startsWith("*/10 ") && isMarketWindow(new Date(event.scheduledTime))
+    const tasks = [];
+    if (shouldDispatchTqqq) {
+      tasks.push(triggerWorkflow(env, { mode: "auto", schedule: event.cron }));
+    } else {
+      console.log("Skipping TQQQ GitHub dispatch for non-actionable schedule tick");
+    }
+    tasks.push(
+      event.cron.startsWith("*/10 ") && isMarketWindow(scheduledAt)
         ? triggerSwingIntradayWorkflow(env)
-        : Promise.resolve({ skipped: "not_intraday_cron" }),
-    ]));
+        : Promise.resolve({ skipped: "not_intraday_cron" })
+    );
+    ctx.waitUntil(Promise.allSettled(tasks));
   },
 
   async fetch(request, env) {

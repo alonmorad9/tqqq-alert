@@ -305,6 +305,18 @@ function shouldDispatchTqqqSchedule(cron, scheduledAt = new Date()) {
   return false;
 }
 
+function swingReportModeForSchedule(cron, scheduledAt = new Date()) {
+  if (!cron.startsWith("45 ") || !isWeekday(scheduledAt)) return null;
+  const month = scheduledAt.getUTCMonth() + 1;
+  const daylightSavingSeason = month >= 3 && month <= 10;
+  const openMinute = daylightSavingSeason ? MARKET_OPEN_MINUTE_UTC : 14 * 60 + 30;
+  const closeMinute = daylightSavingSeason ? MARKET_CLOSE_MINUTE_UTC : 21 * 60;
+  const minute = scheduledAt.getUTCHours() * 60 + scheduledAt.getUTCMinutes();
+  if (minute === openMinute + 15) return "opening";
+  if (minute === closeMinute - 15) return "closing";
+  return null;
+}
+
 function manualLadderStopDue(trade, quote) {
   const ladder = Array.isArray(trade.ladder) ? trade.ladder : [];
   const currentStop = typeof trade.stop === "number" && isFinite(trade.stop) ? trade.stop : null;
@@ -938,10 +950,12 @@ export default {
   async scheduled(event, env, ctx) {
     const scheduledAt = new Date(event.scheduledTime);
     const shouldDispatchTqqq = shouldDispatchTqqqSchedule(event.cron, scheduledAt);
+    const swingReportMode = swingReportModeForSchedule(event.cron, scheduledAt);
     console.log("Scheduled trigger fired", {
       cron: event.cron,
       scheduledTime: event.scheduledTime,
       shouldDispatchTqqq,
+      swingReportMode,
     });
     const tasks = [];
     if (shouldDispatchTqqq) {
@@ -953,6 +967,11 @@ export default {
       event.cron.startsWith("*/10 ") && isMarketWindow(scheduledAt)
         ? triggerSwingIntradayWorkflow(env)
         : Promise.resolve({ skipped: "not_intraday_cron" })
+    );
+    tasks.push(
+      swingReportMode
+        ? triggerSwingWorkflow(env, swingReportMode)
+        : Promise.resolve({ skipped: "not_swing_report_tick" })
     );
     ctx.waitUntil(Promise.allSettled(tasks));
   },

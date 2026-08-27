@@ -1705,6 +1705,18 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         ticker,
         current_price,
     )
+    strategy_stop_parts = [
+        fresh_entry_guard["stop"] if fresh_entry_guard["active"] and fresh_entry_guard["stop"] is not None else None,
+        trailing_stop,
+    ]
+    strategy_stop_parts = [x for x in strategy_stop_parts if x is not None]
+    strategy_stop = max(strategy_stop_parts) if strategy_stop_parts else None
+    strategy_stop_component = None
+    if strategy_stop is not None:
+        if fresh_entry_guard["stop"] is not None and abs(strategy_stop - fresh_entry_guard["stop"]) < 0.005:
+            strategy_stop_component = "hard stop active now"
+        elif trailing_stop is not None and abs(strategy_stop - trailing_stop) < 0.005:
+            strategy_stop_component = "trail active now"
     position_value = shares * current_price
     cost_basis = shares * avg_cost
     total_value = cash + position_value
@@ -1713,7 +1725,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
 
     date_str = ticker.index[-1].strftime("%d/%m/%Y")
     pnl_emoji = "🟢" if pnl >= 0 else "🔴"
-    gap_to_stop = round(((trailing_stop - current_price) / current_price) * 100, 2) if trailing_stop is not None else None
+    gap_to_stop = round(((strategy_stop - current_price) / current_price) * 100, 2) if strategy_stop is not None else None
     gap_to_sma = round(((sma200 - current_price) / current_price) * 100, 2)
     next_profit_target = avg_cost * (1 + SWING_PROFIT_TARGET_PCT) if position_open and avg_cost else None
     rebuy_target = last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT) if waiting_for_pullback and last_profit_sell_price else None
@@ -1763,16 +1775,16 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             f"📈 SMA200:       ${sma200:.2f}  ({gap_to_sma:+.1f}% away)",
             f"✅ SMA Confirm:  {format_sma_confirmation(sma_confirmation)}",
         ]
-        if trailing_stop is not None:
-            lines.append(f"🛑 Trail Stop:   ${trailing_stop:.2f}  ({gap_to_stop:+.1f}% away)")
+        if strategy_stop is not None:
+            lines.append(f"🛑 Strategy Stop: ${strategy_stop:.2f}  ({gap_to_stop:+.1f}% away)")
+            if trailing_stop is not None and fresh_entry_guard["active"] and fresh_entry_guard["stop"] is not None:
+                lines.append(
+                    f"   Based on: hard ${fresh_entry_guard['stop']:.2f}, trail ref ${trailing_stop:.2f} "
+                    f"({strategy_stop_component}; use the higher number)"
+                )
             lines.append(f"🏔️ High Since Entry: ${float(highest_high_since_entry):.2f}")
         else:
-            lines.append("🛑 Trail Stop:   Not active")
-        if fresh_entry_guard["active"] and fresh_entry_guard["stop"] is not None:
-            lines.append(
-                f"🛡️ Hard Stop:    ${fresh_entry_guard['stop']:.2f}  "
-                f"(-{HARD_STOP_PCT * 100:.1f}% from entry)"
-            )
+            lines.append("🛑 Strategy Stop: Not active")
         if next_profit_target:
             next_profit_pct = int(round(SWING_PROFIT_TARGET_PCT * 100))
             lines.append(f"🎯 Next Profit:  ${next_profit_target:.2f}  (+{next_profit_pct}% target)")
@@ -1850,13 +1862,12 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
             f"📈 SMA200:     ${sma200:.2f}",
             f"✅ SMA Confirm: {format_sma_confirmation(sma_confirmation)}",
         ]
-        if trailing_stop is not None:
-            lines.append(f"🛑 Trail Stop: ${trailing_stop:.2f}")
-        if fresh_entry_guard["active"] and fresh_entry_guard["stop"] is not None:
-            lines.append(
-                f"🛡️ Hard Stop: ${fresh_entry_guard['stop']:.2f} "
-                f"(-{HARD_STOP_PCT * 100:.1f}% from entry)"
-            )
+        if strategy_stop is not None:
+            lines.append(f"🛑 Strategy Stop: ${strategy_stop:.2f}")
+            if trailing_stop is not None and fresh_entry_guard["active"] and fresh_entry_guard["stop"] is not None:
+                lines.append(
+                    f"   Based on hard ${fresh_entry_guard['stop']:.2f} vs trail ref ${trailing_stop:.2f}; use the higher number."
+                )
         if next_profit_target:
             lines.append(f"🎯 Next Profit: ${next_profit_target:.2f}")
         if rebuy_target:

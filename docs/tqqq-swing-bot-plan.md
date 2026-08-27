@@ -24,8 +24,8 @@ The core idea is simple:
 | Anti-chop entry filter | QQQ ADX14 >= 25 |
 | Entry RSI | Off |
 | Profit exit | Sell all at +8% from entry |
-| Hard stop | Sell all at -10% from entry |
-| Trailing stop | Sell all at -15% from highest high since entry |
+| Hard stop | Sell all at -7.5% from entry |
+| Trailing stop | Sell all at -12% from highest high since entry |
 | Re-entry after sell | Buy after -3% from sell price or 3 trading days |
 | Manual sell recovery | Same: -3% or 3 trading days, with trend and ADX filters |
 | Waiting asset | Cash |
@@ -82,8 +82,8 @@ Means: no action. Stay with the current state.
 - `Price`: latest TQQQ price used by the bot.
 - `SMA200`: long-term trend line.
 - `SMA Confirm`: confirmation count for trend entries/exits.
-- `Trail Stop`: 15% below highest high since entry.
-- `Hard Stop`: 10% below average cost.
+- `Trail Stop`: 12% below highest high since entry.
+- `Hard Stop`: 7.5% below average cost.
 - `Next Profit`: +8% target.
 - `Re-buy`: 3% below last sell price.
 - `Re-entry RSI`: RSI gate is off in the current optimized version.
@@ -157,7 +157,7 @@ TQQQ is a 3x leveraged ETF. A better bot does not make it safe. This strategy re
 On 2026-08-12, the strategy was retested against the recent choppy two-month window and full-history daily data. The best robust update was:
 
 - Keep +8% profit taking.
-- Use a wider -10% hard stop and 15% trailing stop.
+- Use a protected -7.5% hard stop and 12% trailing stop.
 - Remove the RSI entry cap.
 - Add QQQ ADX14 >= 25 as a real entry/re-entry gate.
 

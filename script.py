@@ -17,8 +17,8 @@ TICKER = "TQQQ"
 STATE_FILE = Path("position_state.json")
 BOT_STRATEGY_STATE_FILE = Path("bot_strategy_state.json")
 MARKET_TZ = ZoneInfo("America/New_York")
-TRAILING_STOP_PCT = 0.15
-HARD_STOP_PCT = 0.10
+TRAILING_STOP_PCT = 0.12
+HARD_STOP_PCT = 0.075
 FRESH_ENTRY_GUARD_PCT = HARD_STOP_PCT
 FRESH_ENTRY_GUARD_DAYS = "always"
 SWING_PROFIT_TARGET_PCT = 0.08
@@ -1092,7 +1092,7 @@ def build_daily_market_summary(ticker, early_warning, support_watch):
 
     return [
         "🧭 Strategy / Warnings",
-        f"Core rules: +{SWING_PROFIT_TARGET_PCT * 100:.0f}% profit target, -{HARD_STOP_PCT * 100:.0f}% hard stop, {TRAILING_STOP_PCT * 100:.0f}% trailing stop, QQQ ADX ≥ {ENTRY_QQQ_ADX_MIN}.",
+        f"Core rules: +{SWING_PROFIT_TARGET_PCT * 100:.0f}% profit target, -{HARD_STOP_PCT * 100:.1f}% hard stop, {TRAILING_STOP_PCT * 100:.0f}% trailing stop, QQQ ADX ≥ {ENTRY_QQQ_ADX_MIN}.",
         f"Market read: RSI {rsi14:.1f}, ATR ${atr14:.2f} ({atr_pct:.1f}%), QQQ {'above' if qqq_close >= qqq_ema21 else 'below'} EMA21, TQQQ {'above' if current_price >= tqqq_sma50 else 'below'} SMA50.",
         f"Warnings: {' | '.join(warning_lines)}.",
     ]

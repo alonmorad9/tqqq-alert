@@ -1228,6 +1228,7 @@ def update_bot_strategy_benchmark(ticker):
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": current_date,
             **clear_fresh_entry_guard_exit_fields(),
+            "last_signal_alert_key": None,
             "last_action": action,
         })
         state_changed = True
@@ -1250,6 +1251,7 @@ def update_bot_strategy_benchmark(ticker):
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": current_date,
             **clear_fresh_entry_guard_exit_fields(),
+            "last_signal_alert_key": None,
             "last_action": action,
         })
         state_changed = True
@@ -1271,6 +1273,7 @@ def update_bot_strategy_benchmark(ticker):
             "early_exit_price": round(current_price, 4),
             "early_exit_date": current_date,
             **clear_fresh_entry_guard_exit_fields(),
+            "last_signal_alert_key": None,
             "last_action": action,
         })
         state_changed = True
@@ -1292,6 +1295,7 @@ def update_bot_strategy_benchmark(ticker):
             "last_profit_sell_price": round(current_price, 4),
             "profit_exit_date": current_date,
             **clear_fresh_entry_guard_exit_fields(),
+            "last_signal_alert_key": None,
             "last_action": action,
         })
         state_changed = True
@@ -1321,6 +1325,7 @@ def update_bot_strategy_benchmark(ticker):
                 "last_profit_sell_price": None,
                 "profit_exit_date": None,
                 **clear_fresh_entry_guard_exit_fields(),
+                "last_signal_alert_key": None,
                 "last_action": action,
             })
             state_changed = True
@@ -1741,6 +1746,23 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
     next_profit_target = avg_cost * (1 + SWING_PROFIT_TARGET_PCT) if position_open and avg_cost else None
     rebuy_target = last_profit_sell_price * (1 - SWING_REBUY_DROP_PCT) if waiting_for_pullback and last_profit_sell_price else None
     manual_rebuy_target = manual_exit_price * (1 - SWING_REBUY_DROP_PCT) if manual_exit_mode and manual_exit_price else None
+    signal_alert_key = None
+    if is_signal and not daily_report and not force_check_report:
+        stop_key = f"{strategy_stop:.2f}" if strategy_stop is not None else "no-stop"
+        target_key = f"{next_profit_target:.2f}" if next_profit_target is not None else "no-target"
+        signal_alert_key = "|".join([
+            str(action),
+            stop_key,
+            target_key,
+            str(position_open),
+            str(state.get("entry_date") or "no-entry"),
+            str(state.get("manual_stop") or "no-manual-stop"),
+        ])
+        if state.get("last_signal_alert_key") == signal_alert_key:
+            print(f"[SIGNAL] Skipping duplicate signal alert: {signal_alert_key}")
+            if state_dirty:
+                save_state(state)
+            return
     report_date = ticker.index[-1].strftime("%Y-%m-%d")
     fresh_guard_cooldown = (
         state.get("last_action") == "sell_all_fresh_entry_guard"
@@ -1918,6 +1940,9 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         ])
         msg = "\n".join(lines)
         send_telegram(msg, reply_markup=build_reply_markup(action if is_signal else None))
+        if signal_alert_key:
+            state["last_signal_alert_key"] = signal_alert_key
+            state_dirty = True
         if state_dirty:
             save_state(state)
 
@@ -2036,6 +2061,7 @@ def mark_manual_sold():
         "last_profit_sell_price": None,
         "profit_exit_date": None,
         **clear_fresh_entry_guard_exit_fields(),
+        "last_signal_alert_key": None,
         "manual_exit_mode": True,
         "manual_exit_price": round(manual_price, 4),
         "manual_exit_date": datetime.now(UTC).date().isoformat(),
@@ -2110,6 +2136,7 @@ def mark_manual_bought():
         "last_profit_sell_price": None,
         "profit_exit_date": None,
         **clear_fresh_entry_guard_exit_fields(),
+        "last_signal_alert_key": None,
         "manual_exit_mode": False,
         "manual_exit_price": None,
         "manual_exit_date": None,

@@ -727,23 +727,26 @@ def format_sma_confirmation(sma_confirmation):
     )
 
 
-def calculate_fresh_entry_guard(position_open, avg_cost, entry_date, ticker, current_price):
+def calculate_fresh_entry_guard(position_open, avg_cost, entry_date, ticker, current_price, manual_stop=None):
     if not position_open or not avg_cost or not entry_date:
         return {
             "active": False,
             "hit": False,
             "stop": None,
+            "source": None,
             "days": None,
             "days_limit": FRESH_ENTRY_GUARD_DAYS,
         }
 
     days_since_entry = trading_days_since(entry_date, ticker)
-    stop = round(float(avg_cost) * (1 - HARD_STOP_PCT), 2)
+    saved_stop = float(manual_stop) if manual_stop not in (None, "") else None
+    stop = round(saved_stop, 2) if saved_stop and saved_stop > 0 else round(float(avg_cost) * (1 - HARD_STOP_PCT), 2)
     active = True
     return {
         "active": active,
         "hit": active and float(current_price) <= stop,
         "stop": stop,
+        "source": "saved manual/broker stop" if saved_stop and saved_stop > 0 else f"entry formula -{HARD_STOP_PCT * 100:.1f}%",
         "days": days_since_entry,
         "days_limit": FRESH_ENTRY_GUARD_DAYS,
     }
@@ -1139,6 +1142,7 @@ def update_bot_strategy_benchmark(ticker):
         state.get("entry_date"),
         ticker,
         current_price,
+        state.get("manual_stop"),
     )
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
@@ -1214,6 +1218,7 @@ def update_bot_strategy_benchmark(ticker):
             "shares": 0.0,
             "cash": round(cash, 2),
             "avg_cost": None,
+            "manual_stop": None,
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": True,
@@ -1235,6 +1240,7 @@ def update_bot_strategy_benchmark(ticker):
             "shares": 0.0,
             "cash": round(cash, 2),
             "avg_cost": None,
+            "manual_stop": None,
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": True,
@@ -1255,6 +1261,7 @@ def update_bot_strategy_benchmark(ticker):
             "shares": 0.0,
             "cash": round(cash, 2),
             "avg_cost": None,
+            "manual_stop": None,
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": False,
@@ -1275,6 +1282,7 @@ def update_bot_strategy_benchmark(ticker):
             "shares": 0.0,
             "cash": round(cash, 2),
             "avg_cost": None,
+            "manual_stop": None,
             "entry_date": None,
             "highest_high_since_entry": None,
             "waiting_for_pullback": True,
@@ -1302,6 +1310,7 @@ def update_bot_strategy_benchmark(ticker):
                 "position_open": True,
                 "entry_date": current_date,
                 "avg_cost": round(current_price, 4),
+                "manual_stop": round(current_price * (1 - HARD_STOP_PCT), 2),
                 "shares": round(buy_shares, 6),
                 "cash": 0.0,
                 "highest_high_since_entry": round(current_high, 4),
@@ -1415,6 +1424,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         state.get("entry_date"),
         ticker,
         current_price,
+        state.get("manual_stop"),
     )
     early_warning = calculate_early_warning(ticker)
     parabolic = calculate_parabolic_stretch(ticker)
@@ -1526,7 +1536,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         action = "🚨 SELL NOW — HARD STOP HIT"
         instruction_lines.append(f"Sell all shares: {sell_shares:.4f}")
         instruction_lines.append(
-            f"Reason: price is at or below the permanent {HARD_STOP_PCT * 100:.1f}% hard stop from entry."
+            f"Reason: price is at or below the active hard stop ${fresh_entry_guard['stop']:.2f} ({fresh_entry_guard.get('source') or 'hard stop'})."
         )
         instruction_lines.append("Bot state: not changed yet. After your broker order fills, send /sold PRICE.")
     elif position_open and hit_trailing_stop:
@@ -1704,6 +1714,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
         state.get("entry_date"),
         ticker,
         current_price,
+        state.get("manual_stop"),
     )
     strategy_stop_parts = [
         fresh_entry_guard["stop"] if fresh_entry_guard["active"] and fresh_entry_guard["stop"] is not None else None,
@@ -1782,6 +1793,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
                     f"   Based on: hard ${fresh_entry_guard['stop']:.2f}, trail ref ${trailing_stop:.2f} "
                     f"({strategy_stop_component}; use the higher number)"
                 )
+                lines.append(f"   Hard stop source: {fresh_entry_guard.get('source') or 'hard stop'}.")
             lines.append(f"🏔️ High Since Entry: ${float(highest_high_since_entry):.2f}")
         else:
             lines.append("🛑 Strategy Stop: Not active")
@@ -1868,6 +1880,7 @@ def check_strategy(daily_report=False, report_kind=None, dedupe_report=False, fo
                 lines.append(
                     f"   Based on hard ${fresh_entry_guard['stop']:.2f} vs trail ref ${trailing_stop:.2f}; use the higher number."
                 )
+                lines.append(f"   Hard stop source: {fresh_entry_guard.get('source') or 'hard stop'}.")
         if next_profit_target:
             lines.append(f"🎯 Next Profit: ${next_profit_target:.2f}")
         if rebuy_target:
@@ -2016,6 +2029,7 @@ def mark_manual_sold():
         "shares": 0.0,
         "cash": round(cash, 2),
         "avg_cost": None,
+        "manual_stop": None,
         "entry_date": None,
         "highest_high_since_entry": None,
         "waiting_for_pullback": False,
@@ -2074,6 +2088,7 @@ def mark_manual_bought():
     if shares <= 0:
         raise RuntimeError("No tracked cash available to buy with — update position_state.json first")
 
+    hard_stop = manual_price * (1 - HARD_STOP_PCT)
     existing_high = state.get("highest_high_since_entry")
     if existing_high is not None:
         highest_high_since_entry = max(float(existing_high), manual_price)
@@ -2084,6 +2099,7 @@ def mark_manual_bought():
         "position_open": True,
         "shares": round(shares, 6),
         "avg_cost": round(manual_price, 4),
+        "manual_stop": round(hard_stop, 2),
         "cash": remaining_cash,
         "entry_date": datetime.now(UTC).date().isoformat(),
         "highest_high_since_entry": round(highest_high_since_entry, 4),
@@ -2103,7 +2119,6 @@ def mark_manual_bought():
     save_state(state)
 
     next_profit_target = manual_price * (1 + SWING_PROFIT_TARGET_PCT)
-    hard_stop = manual_price * (1 - HARD_STOP_PCT)
     trailing_stop = manual_price * (1 - TRAILING_STOP_PCT)
     lines = [
         "\U0001f7e2 Manual Buy Recorded",
